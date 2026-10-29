@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <title>LingaloKR — Learn Korean</title>
+    <meta name="description" content="Learn Korean with LingaloKR: Hangul, numbers, and everyday words with spaced repetition, listening practice, quizzes, flashcards, and typing.">
+    <meta property="og:title" content="LingaloKR">
+    <meta property="og:description" content="Learn Korean: Hangul, numbers, and everyday words with spaced repetition.">
+    <meta property="og:image" content="assets/logo.png">
+    <meta property="og:type" content="website">
+    <meta name="theme-color" content="#f6f7f9">
+
+    <link rel="icon" type="image/x-icon" href="assets/favicon.ico">
+    <link rel="manifest" href="manifest.json">
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <script>
+        // Apply the saved theme before first paint to avoid a flash.
+        (function () {
+            var pref = 'system';
+            try { pref = localStorage.getItem('lingalo_theme') || 'system'; } catch (e) {}
+            var dark = pref === 'dark' || (pref === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+            document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        })();
+    </script>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <!-- Icon sprite -->
+    <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+        <defs>
+            <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 10.5 12 3l9 7.5"/><path d="M5 9.5V21h14V9.5"/><path d="M10 21v-6h4v6"/></symbol>
+            <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/></symbol>
+            <symbol id="i-book" viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></symbol>
+            <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+            <symbol id="i-flame" viewBox="0 0 24 24"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.07-2.14-.22-4.05 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.15.43-2.29 1-3a2.5 2.5 0 0 0 2.5 2.5z"/></symbol>
+            <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></symbol>
+            <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></symbol>
+            <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+            <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+            <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+            <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+            <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+            <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></symbol>
+            <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></symbol>
+            <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="7" width="14" height="14" rx="2"/><path d="M7 3h12a2 2 0 0 1 2 2v12"/></symbol>
+            <symbol id="i-keyboard" viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M6 9h.01M10 9h.01M14 9h.01M18 9h.01M6 13h.01M18 13h.01M10 13h4M7 16h10"/></symbol>
+            <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+            <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></symbol>
+            <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+            <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+            <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></symbol>
+            <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m17 8-5-5-5 5M12 3v12"/></symbol>
+            <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
+            <symbol id="i-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M13 5l7 7-7 7"/></symbol>
+            <symbol id="i-trophy" viewBox="0 0 24 24"><path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h3v2a3 3 0 0 1-3 3M7 5H4v2a3 3 0 0 0 3 3"/></symbol>
+            <symbol id="i-play" viewBox="0 0 24 24"><path d="M6 4l14 8-14 8V4z"/></symbol>
+            <symbol id="i-headphones" viewBox="0 0 24 24"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1v-6h3zM3 19a2 2 0 0 0 2 2h1v-6H3z"/></symbol>
+            <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+            <symbol id="i-hash" viewBox="0 0 24 24"><path d="M4 9h16M4 15h16M10 3 8 21M16 3l-2 18"/></symbol>
+            <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
+        </defs>
+    </svg>
+
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <!-- Header -->
+    <header class="site-header">
+        <div class="header-inner">
+            <a class="brand" href="#/home" aria-label="LingaloKR home">
+                <span class="brand-mark"><img src="assets/logo.png" alt=""></span>
+                <span class="brand-name">Lingalo<span class="brand-kr">KR</span></span>
+            </a>
+
+            <nav class="top-nav" aria-label="Main">
+                <a href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg>Home</a>
+                <a href="#/practice" data-nav="practice"><svg class="icon"><use href="#i-zap"/></svg>Practice</a>
+                <a href="#/numbers" data-nav="numbers"><svg class="icon"><use href="#i-hash"/></svg>Numbers</a>
+                <a href="#/words" data-nav="words"><svg class="icon"><use href="#i-book"/></svg>Words</a>
+                <a href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+            </nav>
+
+            <div class="header-right">
+                <div class="chip chip-streak" title="Daily streak">
+                    <svg class="icon"><use href="#i-flame"/></svg><span id="hdr-streak">0</span>
+                </div>
+                <div class="chip chip-level" title="Level">
+                    <svg class="icon"><use href="#i-star"/></svg><span>Lv <span id="hdr-level">1</span></span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main id="main" class="app-main">
+        <section id="view-home" class="view" hidden></section>
+        <section id="view-practice" class="view" hidden></section>
+        <section id="view-numbers" class="view" hidden></section>
+        <section id="view-words" class="view" hidden></section>
+        <section id="view-settings" class="view" hidden></section>
+    </main>
+
+    <!-- Mobile bottom navigation -->
+    <nav class="bottom-nav" aria-label="Main">
+        <a href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg><span>Home</span></a>
+        <a href="#/practice" data-nav="practice"><svg class="icon"><use href="#i-zap"/></svg><span>Practice</span></a>
+        <a href="#/numbers" data-nav="numbers"><svg class="icon"><use href="#i-hash"/></svg><span>Numbers</span></a>
+        <a href="#/words" data-nav="words"><svg class="icon"><use href="#i-book"/></svg><span>Words</span></a>
+        <a href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
+    </nav>
+
+    <!-- Study session (full screen) -->
+    <div id="study" class="study" hidden>
+        <div class="study-bar">
+            <button type="button" class="icon-btn" data-action="exit-study" aria-label="Exit session" title="Exit (Esc)">
+                <svg class="icon"><use href="#i-x"/></svg>
+            </button>
+            <div class="study-progress" aria-hidden="true"><span id="study-progress-fill"></span></div>
+            <div class="study-meta">
+                <span class="study-timer" id="study-timer" hidden><svg class="icon icon-sm"><use href="#i-clock"/></svg><span id="study-timer-val">60</span>s</span>
+                <span class="study-count" id="study-count">0 / 0</span>
+                <span class="study-streak" id="study-streak" title="Answer streak"><svg class="icon icon-sm"><use href="#i-flame"/></svg><span id="study-streak-val">0</span></span>
+            </div>
+            <button type="button" class="icon-btn" data-action="replay-audio" aria-label="Play pronunciation" title="Play pronunciation (R)">
+                <svg class="icon"><use href="#i-volume"/></svg>
+            </button>
+        </div>
+        <div class="study-body" id="study-body"></div>
+    </div>
+
+    <!-- Confirm dialog -->
+    <dialog id="confirm-dialog" class="dialog">
+        <form method="dialog">
+            <h3 id="confirm-title">Are you sure?</h3>
+            <p id="confirm-body"></p>
+            <div class="dialog-actions">
+                <button type="submit" value="cancel" class="btn btn-secondary">Cancel</button>
+                <button type="submit" value="ok" class="btn btn-primary" id="confirm-ok">Confirm</button>
+            </div>
+        </form>
+    </dialog>
+
+    <!-- Transfer code dialog -->
+    <dialog id="transfer-dialog" class="dialog">
+        <form method="dialog">
+            <h3 id="transfer-title">Enter a transfer code</h3>
+            <p id="transfer-hint"></p>
+            <textarea id="transfer-text" rows="5" class="code-box" spellcheck="false" aria-label="Transfer code"></textarea>
+            <div class="dialog-actions">
+                <button type="submit" value="cancel" class="btn btn-secondary">Close</button>
+                <button type="submit" value="ok" class="btn btn-primary" id="transfer-ok">Restore</button>
+            </div>
+        </form>
+    </dialog>
+
+    <div class="chart-tip" id="chart-tip" role="tooltip" hidden></div>
+    <input type="file" id="import-file" accept="application/json,.json" hidden>
+    <div class="toasts" id="toasts" aria-live="polite"></div>
+
+    <script src="js/hangul.js"></script>
+    <script src="js/data.js"></script>
+    <script src="js/korean_class_words.js"></script>
+    <script src="js/examples.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>
