@@ -1,6 +1,6 @@
 // Network-first for the app's own files so updates show up right away,
 // with the cache as an offline fallback.
-const CACHE_NAME = 'lingalokr-v3';
+const CACHE_NAME = 'lingalokr-v4';
 const ASSETS = [
   './',
   'index.html',
@@ -10,6 +10,11 @@ const ASSETS = [
   'js/korean_class_words.js',
   'js/examples.js',
   'js/lessons.js',
+  'js/strokes.js',
+  'js/speaking.js',
+  'js/writing.js',
+  'js/keyboard.js',
+  'js/achievements.js',
   'js/app.js',
   'assets/logo.png',
   'assets/favicon.ico',

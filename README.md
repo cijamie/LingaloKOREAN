@@ -8,12 +8,12 @@ Learn **Korean**: Hangul, numbers, and everyday words, with spaced repetition so
 
 | Screen | What it's for |
 | --- | --- |
-| **Home** | Review what's due today, your daily goal, streak and level, an activity chart and practice calendar, and every topic with a one-tap **Practice** button. |
-| **Learn** | A guided course of 38 lessons in four units: Read Hangul, First words, Sentences (grammar), and Conversations. Lessons open with short explanation cards (block diagrams, tables, dialogues), teach each item, then mix exercises: multiple choice, Korean from English, listening, building syllable blocks from letter tiles, and putting words in sentence order. Score 60% to finish a lesson. The page also has a block builder and a Hangul chart with a mnemonic for every letter. |
+| **Home** | **Today's plan** (review what's due, one lesson, one skill drill), your daily goal, streak and streak freezes, level, an activity chart and practice calendar, a progress panel (course, skills, words), achievements, and every topic with a one-tap **Practice** button. |
+| **Learn** | **Course:** 41 lessons in four units (Read Hangul, First words, Sentences, Conversations), each ending in a unit test, plus an optional **Your class** track covering the class word list ten words at a time. Lessons open with explanation cards (block diagrams, tables, dialogues), teach each item, then mix exercises. Score 60% to finish a lesson; pass a unit test (80%) to complete the whole unit, so you can test out of Hangul. **Grammar notes:** every explanation card, searchable. **Hangul tools:** a block builder and a chart with a mnemonic for every letter. |
 | **Practice** | Pick topics, a study mode, and options. Words due for review always come first. |
 | **Numbers** | Sino-Korean vs. native numbers, a number reader (type any number to hear it in Korean), and drills for prices, time, counting, age, and dates. |
 | **Words** | Browse and search every word with example sentences. Filter by new, due, or mastered. Add your own words here. |
-| **Settings** | Theme, sound, speech speed, daily goal, transfer code, backup, and reset. |
+| **Settings** | Theme, sound, speech speed, which exercises appear in lessons (speaking, writing, Hangul typing), daily goal, transfer code, backup, and reset. |
 
 ## Content
 
@@ -32,6 +32,19 @@ Learn **Korean**: Hangul, numbers, and everyday words, with spaced repetition so
 - **Typing:** type the romanization. Both the standard spelling and the listed one are accepted.
 - **Speed sprint:** 60 seconds.
 - **Match pairs:** six pairs at a time.
+- **Speaking:** say the word; the browser's speech recognition checks it. Free, built into Chrome, Edge and Safari (not Firefox). The browser sends the audio to its own speech service to recognize it.
+- **Hangul typing:** see the meaning, type the Korean on an on-screen keyboard, or on your own keyboard by key position (no Korean input method needed).
+- **Writing:** watch the stroke order, then trace the letter with a finger, pen or mouse.
+
+## Lesson exercises
+
+Lessons mix: multiple choice, Korean from English, listening, speaking, tracing letters, Hangul typing, building syllable blocks from letter tiles, putting words in order (with a trap word that has the wrong particle), filling in particles (을/를, 은/는, 이/가, 에/에서) with the rule explained, and choosing the next line in a conversation.
+
+## Motivation
+
+- **Today's plan** on Home: due reviews, the next lesson, and a rotating skill drill (speaking, typing, writing or listening).
+- **Streak freezes:** every 7 days of streak earns one (up to 2); a freeze covers a single missed day automatically.
+- **Achievements** for lessons, units, streaks, words mastered, and each skill.
 
 ## Spaced repetition
 
@@ -45,12 +58,17 @@ Progress is stored in your browser (`localStorage`, key `lingalo_stats_v4`, so e
 
 - `index.html`: page shell and icons
 - `css/styles.css`: all styles (light and dark themes)
-- `js/hangul.js`: romanization, syllable block split/join, and Korean number readings
-- `js/data.js`: topics, words, and letter mnemonics
-- `js/lessons.js`: the guided course (units, lessons, explanation cards)
+- `js/hangul.js`: romanization, syllable blocks, keyboard composition, particles, and Korean number readings
+- `js/data.js`: topics, words, sentences, and letter mnemonics
+- `js/lessons.js`: the guided course (units, lessons, explanation cards, class track)
+- `js/strokes.js`: stroke order for every letter
+- `js/speaking.js`, `js/writing.js`, `js/keyboard.js`: speaking, tracing, and Hangul typing exercises
+- `js/achievements.js`: achievements, today's plan, and the progress panel
 - `js/korean_class_words.js`: class word list
 - `js/examples.js`: example sentences
 - `js/app.js`: app logic
 - `sw.js`, `manifest.json`: offline support and install-as-app
 
 No build step. Serve the folder with any static server, or push it to GitHub Pages.
+
+Run `node tests/check.js` to check that every lesson, letter and helper still holds together.

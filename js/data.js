@@ -258,7 +258,13 @@ const TOPICS = [
             '오른쪽으로 가세요': ['', 'Go to the right'], '왼쪽에 있어요': ['', "It's on the left"], '멀어요?': ['', 'Is it far?'],
             '주말에 뭐 해요?': ['', 'What are you doing this weekend?'], '친구를 만나요': ['', "I'm meeting a friend"],
             '같이 영화 볼까요?': ['gachi yeonghwa bolkkayo?', 'Shall we watch a movie together?'], '좋아요': ['', 'Sounds good'],
-            '몇 시에 만날까요?': ['', 'What time shall we meet?'], '세 시에 만나요': ['', "Let's meet at three"]
+            '몇 시에 만날까요?': ['', 'What time shall we meet?'], '세 시에 만나요': ['', "Let's meet at three"],
+            '몇 분이세요?': ['', 'How many people?'], '두 명이에요': ['', 'Two people'], '이쪽으로 오세요': ['', 'This way, please'], '여기요': ['', 'Excuse me (calling staff)'],
+            '비빔밥 하나 주세요': ['', 'One bibimbap, please'], '너무 맛있어요': ['', "It's really delicious"],
+            '어디로 가세요?': ['', 'Where are you going?'], '서울역으로 가 주세요': ['seoullyeogeuro ga juseyo', 'To Seoul Station, please'], '알겠습니다': ['', 'Understood / Got it'],
+            '얼마나 걸려요?': ['', 'How long does it take?'], '이십 분쯤 걸려요': ['', 'It takes about twenty minutes'], '여기서 세워 주세요': ['', 'Please stop here'],
+            '만 오천 원이에요': ['', "It's 15,000 won"], '좀 비싸요': ['', "It's a bit expensive"], '깎아 주세요': ['', 'Please give me a discount'],
+            '이걸로 할게요': ['', "I'll take this one"], '봉투 필요하세요?': ['', 'Do you need a bag?']
         }
     }
 ];

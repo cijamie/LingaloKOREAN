@@ -51,8 +51,17 @@ const MODES = {
     listening: { label: 'Listening', desc: 'Hear the word, pick its meaning', icon: 'headphones' },
     typing: { label: 'Typing', desc: 'Type how it sounds from memory', icon: 'keyboard' },
     speedMatch: { label: 'Speed sprint', desc: 'As many as you can in 60 seconds', icon: 'zap' },
-    matchPairs: { label: 'Match pairs', desc: 'Connect each word to its meaning', icon: 'grid' }
+    matchPairs: { label: 'Match pairs', desc: 'Connect each word to its meaning', icon: 'grid' },
+    speaking: { label: 'Speaking', desc: 'Say each word out loud', icon: 'mic' },
+    hangulTyping: { label: 'Hangul typing', desc: 'See the meaning, type it in Hangul', icon: 'keyboard' },
+    writing: { label: 'Writing', desc: 'Trace letters stroke by stroke', icon: 'pen' }
 };
+// Modes that run one exercise kind per item, shared with guided lessons.
+const MODE_KIND = { speaking: 'speak', hangulTyping: 'typeko', writing: 'write' };
+// Which skill each exercise practices, for the progress panel.
+const SKILLS = { reading: 'Reading', recall: 'Recall', listening: 'Listening', speaking: 'Speaking', writing: 'Writing', typing: 'Typing', grammar: 'Grammar' };
+const KIND_SKILL = { choice: 'reading', reverse: 'recall', listen: 'listening', speak: 'speaking', write: 'writing', typeko: 'typing', build: 'reading', order: 'grammar', particle: 'grammar', reply: 'grammar' };
+const MAX_FREEZES = 2;
 const LENGTHS = [10, 15, 25, 0];
 const VIEWS = ['home', 'learn', 'practice', 'numbers', 'words', 'settings'];
 const PASS_PCT = 60;
@@ -64,6 +73,12 @@ const defaults = () => ({
     history: {},
     customList: {},
     guided: {},
+    unitTests: {},
+    achievements: {},
+    skills: {},
+    daily: {},
+    freezes: 0,
+    lifetimeXP: 0,
     totalXP: 0,
     todayXP: 0,
     todayDate: null,
@@ -76,7 +91,7 @@ const defaults = () => ({
     sfxEnabled: true,
     speechRate: 1.0,
     autoAudio: false,
-    prefs: { mode: 'quiz', reverse: false, teach: true, hints: true, length: 15, topics: {}, numStyle: 'read', numLevel: 1000 }
+    prefs: { mode: 'quiz', reverse: false, teach: true, hints: true, length: 15, topics: {}, numStyle: 'read', numLevel: 1000, speakEx: true, writeEx: true, typeEx: true }
 });
 
 /* ------------------------------------------------------------------ */
@@ -88,7 +103,9 @@ const app = {
     store: defaults(),
     session: null,
     words: { topic: 'all', status: 'all', query: '' },
-    builder: { c: 'ㅎ', v: 'ㅏ', f: 'ㄴ' }
+    builder: { c: 'ㅎ', v: 'ㅏ', f: 'ㄴ' },
+    learnTab: 'course',
+    notesQuery: ''
 };
 
 /* ------------------------------------------------------------------ */
@@ -103,7 +120,7 @@ function loadProgress() {
 
     const base = defaults();
     const s = { ...base, ...saved, prefs: { ...base.prefs, ...(saved.prefs || {}) }, version: 6 };
-    ['mastery', 'srs', 'history', 'customList', 'guided'].forEach(k => { if (!s[k] || typeof s[k] !== 'object') s[k] = {}; });
+    ['mastery', 'srs', 'history', 'customList', 'guided', 'unitTests', 'achievements', 'skills', 'daily'].forEach(k => { if (!s[k] || typeof s[k] !== 'object') s[k] = {}; });
     if (!s.prefs.topics) s.prefs.topics = {};
     if (!MODES[s.prefs.mode]) s.prefs.mode = 'quiz';
 
@@ -119,7 +136,17 @@ function loadProgress() {
     if (lastDay && lastDay !== today) s.todayXP = 0;
     s.todayDate = today;
     s.lastActive = today;
-    if (s.lastStreakUpdate && dayNum(new Date(today)) - dayNum(new Date(s.lastStreakUpdate)) > 1) s.streak = 0;
+    // XP earned over all time, for achievements. Older saves only have XP within the current level.
+    if (!s.lifetimeXP && (s.level > 1 || s.totalXP)) s.lifetimeXP = s.totalXP + (s.level - 1) * s.level * 50;
+    // One missed day can be covered by a streak freeze; any longer gap resets the streak.
+    if (s.lastStreakUpdate) {
+        const gap = dayNum(new Date(today)) - dayNum(new Date(s.lastStreakUpdate));
+        if (gap === 2 && s.freezes > 0 && s.streak > 0) {
+            s.freezes--;
+            s.lastStreakUpdate = dayFromNum(dayNum(new Date(today)) - 1).toDateString();
+            app.freezeUsed = true;
+        } else if (gap > 1) s.streak = 0;
+    }
 
     if (!s.mastery.korean) s.mastery.korean = {};
     if (!s.srs.korean) s.srs.korean = {};
@@ -152,6 +179,7 @@ function addXP(amount) {
 
     s.totalXP += amount;
     s.todayXP += amount;
+    s.lifetimeXP = (s.lifetimeXP || 0) + amount;
     logActivity({ xp: amount });
     if (app.session) app.session.xp += amount;
 
@@ -159,6 +187,11 @@ function addXP(amount) {
         const gap = s.lastStreakUpdate ? dayNum(now) - dayNum(new Date(s.lastStreakUpdate)) : 99;
         s.streak = gap === 1 ? (s.streak || 0) + 1 : 1;
         s.lastStreakUpdate = today;
+        // Every 7 days of streak earns a freeze that covers one missed day.
+        if (s.streak % 7 === 0 && (s.freezes || 0) < MAX_FREEZES) {
+            s.freezes = (s.freezes || 0) + 1;
+            toast(`${s.streak}-day streak! You earned a streak freeze.`, 'success');
+        }
     }
 
     let leveled = false;
@@ -305,16 +338,36 @@ function blockDiagram(syl, { speakable = true } = {}) {
 /* ------------------------------------------------------------------ */
 /* Guided path                                                         */
 /* ------------------------------------------------------------------ */
-const lessonById = id => LESSONS.find(l => l.id === id);
+const unitMeta = name => UNITS.find(u => u.name === name) || {};
+// The main course; optional units (the class track) sit beside it.
+const courseLessons = () => LESSONS.filter(l => !unitMeta(l.unit).optional);
+const unitLessons = unit => LESSONS.filter(l => l.unit === unit);
 const lessonDone = id => !!app.store.guided[id];
-const nextLesson = () => LESSONS.find(l => !lessonDone(l.id)) || null;
-const lessonAfter = id => LESSONS[LESSONS.findIndex(l => l.id === id) + 1] || null;
+const nextLesson = () => courseLessons().find(l => !lessonDone(l.id)) || null;
+const nextClassLesson = () => LESSONS.find(l => unitMeta(l.unit).optional && !lessonDone(l.id)) || null;
+const trackOf = lesson => (unitMeta(lesson.unit).optional ? unitLessons(lesson.unit) : courseLessons());
+const lessonNumber = lesson => trackOf(lesson).indexOf(lesson) + 1;
+
+function lessonAfter(id) {
+    const track = trackOf(lessonById(id));
+    return track[track.indexOf(lessonById(id)) + 1] || null;
+}
+
+// A unit test is a lesson made of every item in the unit. Its id is "test:<unit>".
+function lessonById(id) {
+    if (String(id).startsWith('test:')) {
+        const unit = id.slice(5);
+        const ls = unitLessons(unit);
+        return { id, unit, title: `${unit} test`, test: true, items: ls.flatMap(l => l.items), build: ls.flatMap(l => l.build || []), concepts: ls.flatMap(l => l.concepts || []) };
+    }
+    return LESSONS.find(l => l.id === id);
+}
 
 function lessonItems(lesson) {
-    return lesson.items.flatMap(([topicId, keys]) => {
+    return uniqueItems(lesson.items.map(([topicId, keys]) => {
         const topic = topicById(topicId);
         return topic ? keys.map(k => topic.items.find(i => i.key === k)).filter(Boolean) : [];
-    });
+    }));
 }
 
 function lessonNoun(lesson) {
@@ -670,7 +723,7 @@ function renderHome() {
             </div>
         </section>
 
-        ${guidedBanner()}
+        ${planPanel()}
 
         <section class="stat-grid">
             <div class="stat">
@@ -687,6 +740,7 @@ function renderHome() {
                 <span class="stat-label">Streak</span>
                 <span class="stat-value">${s.streak || 0}<small> ${s.streak === 1 ? 'day' : 'days'}</small></span>
                 <span class="muted small">${s.lastStreakUpdate === new Date().toDateString() ? 'You practiced today' : 'Practice today to keep it going'}</span>
+                <span class="muted small freeze-note" title="A freeze covers one missed day. Earn one every 7 days of streak (up to ${MAX_FREEZES}).">${icon('shield', 'icon-sm')}${plural(s.freezes || 0, 'streak freeze')}</span>
             </div>
             <div class="stat">
                 <span class="stat-label">Level ${s.level}</span>
@@ -696,6 +750,8 @@ function renderHome() {
         </section>
 
         ${renderActivity()}
+        ${progressPanel()}
+        ${achievementsPanel()}
 
         <section class="section">
             <div class="section-head">
@@ -795,22 +851,6 @@ function renderActivity() {
 /* ------------------------------------------------------------------ */
 /* Learn (guided path)                                                 */
 /* ------------------------------------------------------------------ */
-// Home shows where the guided path is up to until every lesson is done.
-function guidedBanner() {
-    const next = nextLesson();
-    if (!next) return '';
-    const done = LESSONS.filter(l => lessonDone(l.id)).length;
-    return `<section class="panel guided-banner">
-        <span class="mode-icon">${icon('learn')}</span>
-        <div class="guided-banner-text">
-            <strong>${done ? 'Continue the guided path' : 'New to Korean? Start the guided path'}</strong>
-            <span class="muted small">Lesson ${LESSONS.indexOf(next) + 1} of ${LESSONS.length}: ${esc(next.title)} · ${esc(next.unit)}</span>
-            ${bar(Math.round(done / LESSONS.length * 100))}
-        </div>
-        <button type="button" class="btn btn-primary" data-action="start-lesson" data-lesson="${next.id}">${icon('play', 'icon-sm')}${done ? 'Continue' : 'Start'}</button>
-    </section>`;
-}
-
 function lessonRow(lesson, n, upNext) {
     const rec = app.store.guided[lesson.id];
     const state = rec ? 'is-done' : upNext ? 'is-next' : '';
@@ -819,7 +859,7 @@ function lessonRow(lesson, n, upNext) {
         <div class="lesson-body">
             <strong>${esc(lesson.title)}</strong>
             <span class="lesson-desc lang-text">${esc(lesson.desc)}</span>
-            <span class="muted small">${plural(lessonItems(lesson).length, lessonNoun(lesson))}${rec ? ` · best ${rec.best}%` : ''}</span>
+            <span class="muted small">${plural(lessonItems(lesson).length, lessonNoun(lesson))}${rec ? (rec.tested ? ' · passed by test' : ` · best ${rec.best}%`) : ''}</span>
         </div>
         <button type="button" class="btn btn-sm ${upNext ? 'btn-primary' : 'btn-secondary'}" data-action="start-lesson" data-lesson="${lesson.id}">${upNext ? `${icon('play', 'icon-sm')}Start` : rec ? 'Review' : 'Open'}</button>
     </li>`;
@@ -834,39 +874,70 @@ function letterTile(item) {
     </button>`;
 }
 
+function unitSection(u, ui, next) {
+    const ls = unitLessons(u.name);
+    const udone = ls.filter(l => lessonDone(l.id)).length;
+    const test = app.store.unitTests[u.name];
+    const testRow = u.optional ? '' : `<li class="lesson lesson-test ${test ? 'is-done' : ''}">
+        <span class="lesson-num">${test ? icon('check', 'icon-sm') : icon('target', 'icon-sm')}</span>
+        <div class="lesson-body">
+            <strong>Unit test</strong>
+            <span class="muted small">15 questions across the unit · pass ${UNIT_PASS_PCT}% to complete every lesson in it${test ? ` · best ${test.best}%` : ''}</span>
+        </div>
+        <button type="button" class="btn btn-sm btn-secondary" data-action="start-test" data-unit="${esc(u.name)}">${test ? 'Retake' : 'Take test'}</button>
+    </li>`;
+    return `<section class="section">
+        <div class="section-head"><h2><span class="step">${u.optional ? icon('book', 'icon-sm') : ui + 1}</span>${esc(u.name)}</h2><span class="muted small">${udone} / ${ls.length}</span></div>
+        <p class="muted small unit-desc">${esc(u.desc)}</p>
+        <ol class="lesson-list">${ls.map(l => lessonRow(l, lessonNumber(l), next === l)).join('')}${testRow}</ol>
+    </section>`;
+}
+
 function renderLearn() {
     const next = nextLesson();
-    const done = LESSONS.filter(l => lessonDone(l.id)).length;
-    const units = [...new Set(LESSONS.map(l => l.unit))];
-    const chart = [['consonants', 'Consonants'], ['vowels', 'Vowels'], ['doubleConsonants', 'Double consonants'], ['diphthongs', 'Combined vowels']];
+    const course = courseLessons();
+    const done = course.filter(l => lessonDone(l.id)).length;
+    const tab = app.learnTab;
+    const tabs = [['course', 'Course'], ['notes', 'Grammar notes'], ['tools', 'Hangul tools']];
 
-    $('#view-learn').innerHTML = `
-        <header class="page-head">
-            <h1>Learn</h1>
-            <p class="lead">A guided path from the alphabet to your first words. Each lesson teaches a few new things, then quizzes you on them.</p>
-        </header>
-
+    let body = '';
+    if (tab === 'course') {
+        body = `
         <section class="panel guided-summary">
             <div>
-                <strong>${done === LESSONS.length ? 'Path complete. 잘했어요!' : plural(done, 'lesson') + ' of ' + LESSONS.length + ' done'}</strong>
-                <span class="muted small">${next ? `Up next: ${esc(next.title)}` : 'Keep your words fresh with daily reviews on Home.'}</span>
-                ${bar(Math.round(done / LESSONS.length * 100))}
+                <strong>${!next ? 'Course complete. 잘했어요!' : `${done} of ${plural(course.length, 'lesson')} done`}</strong>
+                <span class="muted small">${next ? `Up next: ${esc(next.title)} · ${esc(next.unit)}` : 'Keep your words fresh with daily reviews, or work through your class words below.'}</span>
+                ${bar(Math.round(done / course.length * 100))}
             </div>
             ${next ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${next.id}">${icon('play')}${done ? 'Continue' : 'Start lesson 1'}</button>` : ''}
         </section>
-
-        ${units.map((u, ui) => {
-            const ls = LESSONS.filter(l => l.unit === u);
-            const udone = ls.filter(l => lessonDone(l.id)).length;
-            const meta = UNITS.find(x => x.name === u);
-            return `<section class="section">
-                <div class="section-head"><h2><span class="step">${ui + 1}</span>${esc(u)}</h2><span class="muted small">${udone} / ${ls.length}</span></div>
-                ${meta ? `<p class="muted small unit-desc">${esc(meta.desc)}</p>` : ''}
-                <ol class="lesson-list">${ls.map(l => lessonRow(l, LESSONS.indexOf(l) + 1, next === l)).join('')}</ol>
-            </section>`;
-        }).join('')}
-
-        <section class="section">
+        ${done === 0 ? `<section class="panel placement">
+            <span class="mode-icon">${icon('target')}</span>
+            <div><strong>Already read Hangul?</strong><span class="muted small">Take the Read Hangul unit test. Pass it and you skip straight to First words.</span></div>
+            <button type="button" class="btn btn-secondary" data-action="start-test" data-unit="Read Hangul">Test out</button>
+        </section>` : ''}
+        ${UNITS.map((u, ui) => unitSection(u, ui, u.optional ? nextClassLesson() : next)).join('')}`;
+    } else if (tab === 'notes') {
+        const q = normalize(app.notesQuery);
+        const notes = courseLessons().flatMap(l => (l.concepts || []).map(c => ({ l, c })))
+            .filter(({ l, c }) => !q || normalize([l.title, l.desc, c.title, ...(c.text || []), ...(c.dialogue || []).flat()].join(' ')).includes(q) || [l.desc, ...(c.text || [])].join(' ').includes(app.notesQuery.trim()));
+        body = `
+        <div class="toolbar">
+            <label class="search">${icon('search')}<input type="search" id="notes-search" placeholder="Search notes, e.g. 을, particles, past tense" value="${esc(app.notesQuery)}" autocomplete="off"></label>
+        </div>
+        <div id="notes-results">${notes.length ? UNITS.filter(u => !u.optional).map(u => {
+            const inUnit = notes.filter(n => n.l.unit === u.name);
+            return inUnit.length ? `<h3 class="group-title">${esc(u.name)}</h3>
+                <div class="notes-list">${inUnit.map(({ l, c }) => `
+                    <details class="note-item" ${q ? 'open' : ''}>
+                        <summary><strong>${esc(c.title)}</strong><span class="muted small">Lesson ${lessonNumber(l)} · ${esc(l.title)}</span></summary>
+                        ${conceptCard(c)}
+                    </details>`).join('')}</div>` : '';
+        }).join('') : `<div class="empty"><div class="empty-icon">${icon('search')}</div><strong>No notes match</strong><span class="muted small">Try a different word.</span></div>`}</div>`;
+    } else {
+        const chart = [['consonants', 'Consonants'], ['vowels', 'Vowels'], ['doubleConsonants', 'Double consonants'], ['diphthongs', 'Combined vowels']];
+        body = `
+        <section class="section section-first">
             <div class="section-head"><h2>Block builder</h2><span class="muted small">Tap letters to build a syllable</span></div>
             <p class="muted small chart-note">Every block is a consonant + a vowel, with an optional final consonant underneath. Try any combination and hear it.</p>
             <div class="panel" id="block-builder"></div>
@@ -876,9 +947,20 @@ function renderLearn() {
             <div class="section-head"><h2>Hangul chart</h2><span class="muted small">Tap a letter to hear it</span></div>
             <p class="muted small chart-note">A picture for every letter. Vowels: follow the short stroke. Two short strokes add a "y": ㅏ → ㅑ, ㅓ → ㅕ, ㅗ → ㅛ, ㅜ → ㅠ.</p>
             ${chart.map(([id, label]) => `
-                <h3 class="group-title">${label}</h3>
+                <div class="group-row"><h3 class="group-title">${label}</h3><button type="button" class="btn btn-sm btn-ghost" data-action="trace-group" data-topic="${id}">${icon('pen', 'icon-sm')}Trace these</button></div>
                 <div class="letter-grid">${(topicById(id) || { items: [] }).items.map(letterTile).join('')}</div>`).join('')}
         </section>`;
+    }
+
+    $('#view-learn').innerHTML = `
+        <header class="page-head">
+            <h1>Learn</h1>
+            <p class="lead">A guided course from the alphabet to real conversations. Each lesson explains, teaches a few new things, then practices them.</p>
+        </header>
+        <div class="segmented learn-tabs" role="tablist" aria-label="Learn sections">
+            ${tabs.map(([id, label]) => `<button type="button" role="tab" aria-selected="${tab === id}" class="${tab === id ? 'is-on' : ''}" data-action="learn-tab" data-tab="${id}">${label}</button>`).join('')}
+        </div>
+        ${body}`;
     renderBuilder();
 }
 
@@ -915,7 +997,7 @@ function renderPractice() {
     const count = pool.length;
     const due = pool.filter(i => isDue(i)).length;
     const sessionCount = p.mode === 'speedMatch' ? 'Up to 60 seconds' : plural(p.length ? Math.min(p.length, count) : count, 'question');
-    const noReverse = ['typing', 'matchPairs', 'listening'].includes(p.mode);
+    const noReverse = ['typing', 'matchPairs', 'listening', 'speaking', 'hangulTyping', 'writing'].includes(p.mode);
 
     const toggle = (key, title, desc, disabled = false) => `
         <label class="switch-row ${disabled ? 'is-disabled' : ''}">
@@ -953,12 +1035,15 @@ function renderPractice() {
         <section class="panel">
             <div class="panel-head"><span class="step">2</span><h2>How to study</h2></div>
             <div class="mode-grid" role="radiogroup" aria-label="Practice mode">
-                ${Object.entries(MODES).map(([id, m]) => `
-                    <button type="button" class="mode-card ${p.mode === id ? 'is-on' : ''}" role="radio" aria-checked="${p.mode === id}" data-action="set-mode" data-mode="${id}">
+                ${Object.entries(MODES).map(([id, m]) => {
+                    const off = id === 'speaking' && !Speaking.supported;
+                    return `
+                    <button type="button" class="mode-card ${p.mode === id ? 'is-on' : ''}" role="radio" aria-checked="${p.mode === id}" data-action="set-mode" data-mode="${id}" ${off ? 'disabled' : ''}>
                         <span class="mode-icon">${icon(m.icon)}</span>
                         <strong>${m.label}</strong>
-                        <small>${m.desc}</small>
-                    </button>`).join('')}
+                        <small>${off ? 'Needs Chrome, Edge or Safari' : m.desc}</small>
+                    </button>`;
+                }).join('')}
             </div>
         </section>
 
@@ -1288,6 +1373,22 @@ function renderSettings() {
             </section>
 
             <section class="panel">
+                <div class="panel-head"><h2>Lesson exercises</h2></div>
+                <label class="setting-row ${Speaking.supported ? '' : 'is-disabled'}">
+                    <span><strong>Speaking</strong><small>${Speaking.supported ? 'Say words out loud. Your browser sends the audio to its speech service (Google in Chrome, Microsoft in Edge, Apple in Safari) to recognize it.' : 'Not available in this browser. Speaking works in Chrome, Edge and Safari.'}</small></span>
+                    <input type="checkbox" class="switch" data-pref="speakEx" ${s.prefs.speakEx ? 'checked' : ''} ${Speaking.supported ? '' : 'disabled'}>
+                </label>
+                <label class="setting-row">
+                    <span><strong>Writing</strong><small>Trace letters stroke by stroke in Hangul lessons</small></span>
+                    <input type="checkbox" class="switch" data-pref="writeEx" ${s.prefs.writeEx ? 'checked' : ''}>
+                </label>
+                <label class="setting-row">
+                    <span><strong>Hangul typing</strong><small>Type answers on a Korean keyboard (on screen, or your own keys by position)</small></span>
+                    <input type="checkbox" class="switch" data-pref="typeEx" ${s.prefs.typeEx ? 'checked' : ''}>
+                </label>
+            </section>
+
+            <section class="panel">
                 <div class="panel-head"><h2>Daily goal</h2></div>
                 <div class="setting-row">
                     <span><strong>XP per day</strong><small>About 10 XP per correct answer</small></span>
@@ -1304,6 +1405,7 @@ function renderSettings() {
                     <div><dt><kbd>Enter</kbd></dt><dd>Check answer / continue</dd></div>
                     <div><dt><kbd>R</kbd></dt><dd>Replay pronunciation</dd></div>
                     <div><dt><kbd>Esc</kbd></dt><dd>Leave the session</dd></div>
+                    <div><dt>Letter keys</dt><dd>Type Hangul by key position (Q = ㅂ, W = ㅈ…) in typing exercises</dd></div>
                 </dl>
             </section>
 
@@ -1408,13 +1510,13 @@ function openStudyScreen(mode) {
 }
 
 /* Guided lesson: an intro card, concept cards, one teaching card per item, then mixed practice. */
-function startLesson(id) {
+function startLesson(id, plan) {
     const lesson = lessonById(id);
     const items = lesson ? lessonItems(lesson) : [];
     if (!items.length) return;
     stopTimer();
     const steps = [{ intro: true }, ...(lesson.concepts || []).map(concept => ({ concept })), ...items.map(item => ({ item }))];
-    app.session = { mode: 'teach', lesson: id, items, steps, queue: items, pool: items, index: 0, item: null, xp: 0 };
+    app.session = { mode: 'teach', lesson: id, plan, items, steps, queue: items, pool: items, index: 0, item: null, xp: 0 };
     openStudyScreen('teach');
     renderTeach();
 }
@@ -1457,10 +1559,12 @@ function renderTeach() {
     const body = $('#study-body');
 
     if (step.intro) {
-        const extras = [lesson.build && 'block building', s.items.some(i => i.key.trim().includes(' ')) && 'sentence building', koreanVoice() && 'listening'].filter(Boolean);
+        const p = app.store.prefs;
+        const extras = [lesson.build && 'block building', s.items.some(i => i.key.trim().includes(' ')) && 'sentence building', koreanVoice() && 'listening',
+            p.speakEx && Speaking.supported && s.items.some(i => !i.isChar) && 'speaking', p.writeEx && s.items.some(canWrite) && 'tracing', p.typeEx && 'Hangul typing'].filter(Boolean);
         body.innerHTML = `<div class="study-card">
             <div class="prompt teach-intro">
-                <div class="prompt-label">Lesson ${LESSONS.indexOf(lesson) + 1} · ${esc(lesson.unit)}</div>
+                <div class="prompt-label">Lesson ${lessonNumber(lesson)} · ${esc(lesson.unit)}</div>
                 <h2>${esc(lesson.title)}</h2>
                 <div class="teach-preview lang-text">${esc(lesson.desc)}</div>
                 <ul class="teach-tips">${lesson.intro.map(t => `<li>${richText(t)}</li>`).join('')}</ul>
@@ -1501,7 +1605,7 @@ function teachStep(dir) {
     if (!s || s.mode !== 'teach') return;
     if (dir < 0 && s.index <= 0) return;
     s.index += dir;
-    if (s.index >= s.steps.length) startSession({ items: s.items, mode: 'lesson', reverse: false, lesson: s.lesson });
+    if (s.index >= s.steps.length) startSession({ items: s.items, mode: 'lesson', reverse: false, lesson: s.lesson, plan: s.plan });
     else renderTeach();
 }
 
@@ -1513,14 +1617,56 @@ function buildItem(syl) {
     return { id: `gen:build:${syl}`, key: syl, rom, def: rom, isChar: true, gen: true };
 }
 
+const PARTICLE_PAIRS = { '을': '를', '를': '을', '은': '는', '는': '은', '이': '가', '가': '이', '에': '에서', '에서': '에' };
+const PARTICLE_ROLE = {
+    '을': 'marks the object', '를': 'marks the object', '은': 'marks the topic', '는': 'marks the topic',
+    '이': 'marks the subject', '가': 'marks the subject', '에': 'marks where you go or where something is', '에서': 'marks where an action happens'
+};
+const wordsOf = item => item.key.trim().split(/\s+/);
+
+// "책＿ 읽어요": pick the particle that fills the gap.
+function particleExercise(item) {
+    const ws = wordsOf(item);
+    const at = ws.slice(0, -1).findIndex(w => Hangul.particleOf(w));
+    if (at < 0) return null;
+    const p = Hangul.particleOf(ws[at]);
+    const pair = PARTICLE_PAIRS[p.particle];
+    const others = shuffle(Object.keys(PARTICLE_PAIRS).filter(x => x !== p.particle && x !== pair)).slice(0, 2);
+    const rule = ['에', '에서'].includes(p.particle)
+        ? `${p.particle} ${PARTICLE_ROLE[p.particle]}.`
+        : `${p.particle} ${PARTICLE_ROLE[p.particle]}. ${p.stem} ends in a ${p.final ? 'consonant' : 'vowel'}, so it takes ${p.particle}, not ${pair}.`;
+    return {
+        kind: 'particle', item, answer: p.particle, options: [p.particle, pair, ...others], rule,
+        prompt: ws.map((w, i) => (i === at ? `${p.stem}＿` : w)).join(' ')
+    };
+}
+
+// Dialogues: given a line, pick the reply that comes next.
+function replyExercises(dialogue) {
+    return dialogue.map((line, i) => {
+        const prev = dialogue[i - 1];
+        if (!prev || prev[0] === line[0]) return null;
+        const others = shuffle(dialogue.filter((l, j) => j !== i && j !== i - 1).map(l => l[1])).slice(0, 3);
+        return { kind: 'reply', prev, options: [line[1], ...others], item: { id: `gen:reply:${line[1]}`, key: line[1], rom: Hangul.romanize(line[1]), def: line[2], gen: true } };
+    }).filter(Boolean);
+}
+
 function lessonExercises(lesson) {
     const items = lessonItems(lesson);
-    const words = items.filter(i => !i.isChar);
+    const wordItems = items.filter(i => !i.isChar);
+    const sentences = wordItems.filter(i => wordsOf(i).length > 1);
+    const p = app.store.prefs;
+    const some = (list, n) => shuffle(list).slice(0, n);
     const ex = items.map(item => ({ kind: 'choice', item }));
-    shuffle(words).slice(0, Math.ceil(words.length / 2)).forEach(item => ex.push({ kind: 'reverse', item }));
-    if (koreanVoice()) shuffle(items).slice(0, Math.ceil(items.length / 3)).forEach(item => ex.push({ kind: 'listen', item }));
-    words.filter(i => i.key.trim().split(/\s+/).length > 1).forEach(item => ex.push({ kind: 'order', item }));
+    some(wordItems, Math.ceil(wordItems.length / 2)).forEach(item => ex.push({ kind: 'reverse', item }));
+    if (koreanVoice()) some(items, Math.ceil(items.length / 3)).forEach(item => ex.push({ kind: 'listen', item }));
+    sentences.forEach(item => ex.push({ kind: 'order', item }));
     (lesson.build || []).forEach(syl => ex.push({ kind: 'build', item: buildItem(syl) }));
+    some(sentences.map(particleExercise).filter(Boolean), Math.ceil(sentences.length / 2)).forEach(e => ex.push(e));
+    (lesson.concepts || []).filter(c => c.dialogue).forEach(c => some(replyExercises(c.dialogue), 3).forEach(e => ex.push(e)));
+    if (p.speakEx && Speaking.supported && wordItems.length) some(wordItems, Math.ceil(wordItems.length / 4)).forEach(item => ex.push({ kind: 'speak', item }));
+    if (p.writeEx) some(items.filter(canWrite), 2).forEach(item => ex.push({ kind: 'write', item }));
+    if (p.typeEx) some(items.filter(i => [...i.key].length <= 8), 2).forEach(item => ex.push({ kind: 'typeko', item }));
     // Start with plain recognition so every item gets a first look before the harder exercises.
     const choice = shuffle(ex.filter(e => e.kind === 'choice'));
     const half = Math.ceil(choice.length / 2);
@@ -1534,6 +1680,11 @@ function lessonQuestion(ex) {
     if (ex.kind === 'listen') return { prompt: '', audio: true, hint: '', answer: it.def, answerLang: false, label: 'What did you hear?' };
     if (ex.kind === 'build') return { prompt: it.rom, label: 'Build this syllable', answer: it.key };
     if (ex.kind === 'order') return { prompt: it.def, label: 'Put the words in order', answer: it.key };
+    if (ex.kind === 'particle') return { prompt: ex.prompt, promptLang: true, hint: it.def, answer: ex.answer, answerLang: true, options: shuffle(ex.options), label: 'Fill in the particle', feedback: `${esc(ex.rule)} <span class="lang-text">${esc(it.key)}</span>` };
+    if (ex.kind === 'reply') return { prompt: ex.prev[1], promptLang: true, hint: ex.prev[2], answer: it.key, answerLang: true, options: shuffle(ex.options), label: `${ex.prev[0]} says… what comes next?`, feedback: answerText(it) };
+    if (ex.kind === 'speak') return { prompt: it.key, label: 'Say it out loud', answer: it.key, promptLang: true };
+    if (ex.kind === 'write') return { prompt: it.key, label: 'Trace the letter', answer: it.key };
+    if (ex.kind === 'typeko') return { prompt: it.def, label: 'Type it in Hangul', answer: it.key };
     return { prompt: it.key, promptLang: true, hint, answer: it.def, answerLang: false, label: it.isChar ? 'How does this sound?' : 'What does this mean?' };
 }
 
@@ -1591,10 +1742,14 @@ function pickBuildTile(index) {
 function renderOrder() {
     const s = app.session;
     if (!s.order) {
-        const words = s.item.key.trim().split(/\s+/);
-        let tiles = shuffle(words.map(w => ({ w })));
-        for (let t = 0; t < 5 && tiles.every((x, n) => x.w === words[n]); t++) tiles = shuffle(tiles);
-        s.order = { tiles, picked: [] };
+        const ws = wordsOf(s.item);
+        let tiles = ws.map(w => ({ w }));
+        // In sentence lessons, add a trap: the same word with the wrong particle.
+        const withParticle = ws.slice(0, -1).map(w => Hangul.particleOf(w)).find(Boolean);
+        if (withParticle && s.mode === 'lesson') tiles.push({ w: withParticle.stem + PARTICLE_PAIRS[withParticle.particle], decoy: true });
+        tiles = shuffle(tiles);
+        for (let t = 0; t < 5 && tiles.every((x, n) => x.w === ws[n]); t++) tiles = shuffle(tiles);
+        s.order = { tiles, picked: [], size: ws.length, decoy: tiles.some(x => x.decoy) };
     }
     const o = s.order;
     $('#study-body').innerHTML = `<div class="study-card">
@@ -1603,12 +1758,12 @@ function renderOrder() {
             <div class="prompt-text is-long">${esc(s.q.prompt)}</div>
             <div class="order-line ${o.picked.length ? '' : 'is-empty'}">${o.picked.length
                 ? o.picked.map((t, n) => `<button type="button" class="tile lang-text" data-action="order-remove" data-pos="${n}" ${s.locked ? 'disabled' : ''}>${esc(o.tiles[t].w)}</button>`).join('')
-                : '<span class="muted small">Tap the words below in order. The verb comes last.</span>'}</div>
+                : `<span class="muted small">Tap the words below in order. The verb comes last.${o.decoy ? ' One word is a trap.' : ''}</span>`}</div>
         </div>
         <div class="tile-bank">${o.tiles.map((t, i) => `<button type="button" class="tile lang-text" data-action="order-pick" data-index="${i}" ${o.picked.includes(i) || s.locked ? 'disabled' : ''}>${esc(t.w)}</button>`).join('')}</div>
         <div class="fc-actions">
             <button type="button" class="btn btn-secondary btn-lg" data-action="order-remove" data-pos="${o.picked.length - 1}" ${o.picked.length && !s.locked ? '' : 'disabled'}>Undo</button>
-            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="check-exercise" ${o.picked.length === o.tiles.length && !s.locked ? '' : 'disabled'}>Check <kbd>Enter</kbd></button>
+            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="check-exercise" ${o.picked.length === o.size && !s.locked ? '' : 'disabled'}>Check <kbd>Enter</kbd></button>
         </div>
     </div><div class="feedback-slot" id="feedback"></div>`;
 }
@@ -1616,7 +1771,7 @@ function renderOrder() {
 function pickOrderTile(index) {
     const s = app.session;
     const o = s && s.order;
-    if (!o || s.locked || o.picked.includes(index)) return;
+    if (!o || s.locked || o.picked.includes(index) || o.picked.length >= o.size) return;
     o.picked.push(index);
     renderOrder();
 }
@@ -1631,7 +1786,10 @@ function removeOrderTile(pos) {
 
 function checkExercise() {
     const s = app.session;
-    if (!s || s.locked || s.mode !== 'lesson') return;
+    if (!s || s.locked || !s.ex) return;
+    if (s.ex.kind === 'write') return checkWrite();
+    if (s.ex.kind === 'typeko') return checkTypeKo();
+    if (s.ex.kind === 'speak') return startListening();
     let ok, extra = '';
     if (s.ex.kind === 'build') {
         const b = s.build;
@@ -1643,8 +1801,9 @@ function checkExercise() {
         extra = `${[p.initial, p.vowel, p.final].filter(Boolean).join(' + ')} = <span class="lang-text">${esc(s.item.key)}</span> <span class="muted">(${esc(s.item.rom)})</span>${ok ? '' : ` · you built <span class="lang-text">${esc(made)}</span>`}`;
     } else if (s.ex.kind === 'order') {
         const o = s.order;
-        if (o.picked.length !== o.tiles.length) return;
-        ok = o.picked.map(i => o.tiles[i].w).join(' ') === s.item.key.trim().split(/\s+/).join(' ');
+        if (o.picked.length !== o.size) return;
+        ok = o.picked.map(i => o.tiles[i].w).join(' ') === wordsOf(s.item).join(' ');
+        if (!ok && o.picked.some(i => o.tiles[i].decoy)) extra = `Watch the particle. ${answerText(s.item)}`;
     } else return;
     s.locked = true;
     grade(ok);
@@ -1653,8 +1812,17 @@ function checkExercise() {
     showFeedback(ok, extra);
 }
 
-function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill, lesson } = {}) {
-    const pool = items || poolFor(topics || selectedTopicIds());
+function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill, lesson, plan } = {}) {
+    let pool = items || poolFor(topics || selectedTopicIds());
+    if (mode === 'speaking') {
+        if (!Speaking.supported) { toast('Speaking needs speech recognition: try Chrome, Edge or Safari.', 'error'); return; }
+        pool = pool.filter(i => !i.isChar && !i.gen);
+        if (!pool.length) { toast('Speaking works with words and phrases. Pick a vocabulary topic.', 'error'); return; }
+    }
+    if (mode === 'writing') {
+        pool = pool.filter(canWrite);
+        if (!pool.length) pool = poolFor(['consonants', 'vowels']);
+    }
     if (!pool.length) { toast('Pick at least one topic that has words in it.', 'error'); return; }
     if (mode === 'matchPairs' && pool.length < 2) mode = 'flashcards';
     if (mode === 'listening' && !koreanVoice()) toast('No Korean voice found on this device, so audio may not play.', 'error');
@@ -1662,7 +1830,10 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
     const length = drill || lesson ? 0 : app.store.prefs.length;
     const t = dayNum();
     let queue;
-    if (mode === 'lesson') {
+    if (mode === 'lesson' && String(lesson).startsWith('test:')) {
+        const all = lessonExercises(lessonById(lesson)).filter(e => !['speak', 'write'].includes(e.kind));
+        queue = shuffle([...shuffle(all.filter(e => e.kind !== 'choice')).slice(0, 9), ...shuffle(all.filter(e => e.kind === 'choice'))]).slice(0, 15);
+    } else if (mode === 'lesson') {
         queue = lessonExercises(lessonById(lesson));
     } else if (mode === 'speedMatch') {
         queue = shuffle(pool);
@@ -1676,7 +1847,8 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
 
     stopTimer();
     app.session = {
-        mode, pool, queue, topics, items, drill, lesson,
+        mode, pool, queue, topics, items, drill, lesson, plan,
+        test: String(lesson || '').startsWith('test:') ? lesson.slice(5) : null,
         reverse: reverse !== undefined ? reverse : app.store.prefs.reverse,
         index: 0, correct: 0, attempts: 0, streak: 0, best: 0, xp: 0,
         missed: new Map(), repeats: new Map(),
@@ -1691,6 +1863,7 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
 
 function exitSession() {
     stopTimer();
+    Speaking.stop();
     app.session = null;
     $('#study').hidden = true;
     document.body.classList.remove('is-studying');
@@ -1796,23 +1969,28 @@ function nextQuestion() {
         s.ex = s.queue[s.index];
         s.item = s.ex.item;
         s.q = lessonQuestion(s.ex);
+    } else if (MODE_KIND[s.mode]) {
+        s.item = s.queue[s.index];
+        s.ex = { kind: MODE_KIND[s.mode], item: s.item };
+        s.q = lessonQuestion(s.ex);
     } else {
+        s.ex = null;
         s.item = s.queue[s.index];
         s.q = buildQuestion(s.item);
     }
     s.locked = false;
     s.revealed = false;
     s.awaitingContinue = false;
-    s.build = s.order = null;
+    s.build = s.order = s.speak = s.write = s.kb = null;
+    Speaking.stop();
     updateStudyBar();
 
     const body = $('#study-body');
-    if (s.mode === 'lesson' && s.ex.kind === 'build') {
-        renderBuild();
-    } else if (s.mode === 'lesson' && s.ex.kind === 'order') {
-        renderOrder();
+    const render = { build: renderBuild, order: renderOrder, speak: renderSpeak, write: renderWrite, typeko: renderTypeKo }[s.ex && s.ex.kind];
+    if (render) {
+        render();
     } else if (['quiz', 'speedMatch', 'listening', 'lesson'].includes(s.mode)) {
-        s.q.options = buildOptions(s.q, s.item);
+        s.q.options = s.q.options || buildOptions(s.q, s.item);
         body.innerHTML = `<div class="study-card">${promptBlock(s.q, s.item)}
             <div class="options">${s.q.options.map((o, i) => `
                 <button type="button" class="option" data-action="answer" data-index="${i}">
@@ -1867,6 +2045,7 @@ function grade(ok, { xpRight = 10, xpWrong = 2, gain = 1, rating = 'good' } = {}
     const item = s.item;
     s.attempts++;
     logActivity({ correct: ok ? 1 : 0, total: 1 });
+    logSkill(ok);
     if (ok) {
         s.correct++;
         s.streak++;
@@ -1884,9 +2063,21 @@ function grade(ok, { xpRight = 10, xpWrong = 2, gain = 1, rating = 'good' } = {}
         SFX.wrong();
         haptic('error');
         addXP(xpWrong);
-        if (app.store.prefs.teach && s.mode !== 'speedMatch') requeue(item, 3);
+        if (app.store.prefs.teach && s.mode !== 'speedMatch' && !s.test) requeue(item, 3);
     }
     updateStudyBar();
+}
+
+function skillOf(s) {
+    if (s.ex) return KIND_SKILL[s.ex.kind] || 'reading';
+    return { listening: 'listening', typing: 'typing', flashcards: 'recall' }[s.mode] || (s.reverse ? 'recall' : 'reading');
+}
+
+function logSkill(ok) {
+    const k = skillOf(app.session);
+    const rec = app.store.skills[k] || (app.store.skills[k] = { c: 0, t: 0 });
+    rec.t++;
+    if (ok) rec.c++;
 }
 
 function requeue(item, gap) {
@@ -1944,6 +2135,8 @@ function answerQuiz(index) {
     } else if (s.q.audio) {
         // Always reveal what was said, so the sound gets linked to the word.
         showFeedback(ok);
+    } else if (s.q.feedback) {
+        showFeedback(ok, s.q.feedback);
     } else if (ok) {
         const btn = $$('.option')[index];
         if (btn) { const r = btn.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); }
@@ -1995,6 +2188,7 @@ function rateCard(rating) {
         s.streak = 0;
         s.missed.set(s.item.id, s.item);
         logActivity({ total: 1 });
+        logSkill(false);
         bumpMastery(s.item, -1);
         schedule(s.item, 'again');
         SFX.wrong();
@@ -2080,12 +2274,26 @@ function finishSession() {
     let title = s.mode === 'speedMatch' ? "Time's up!" : acc >= 90 ? 'Excellent work!' : acc >= 70 ? 'Nice session!' : 'Session complete';
     let msg = acc >= 90 ? 'You really know these.' : acc >= 70 ? 'Solid progress. Keep it up.' : 'Every miss makes the next try easier.';
 
-    // Guided lessons count as done once the quiz is passed.
+    // Guided lessons count as done once the quiz is passed; a passed unit test completes the unit.
     let lessonActions = '';
-    if (s.lesson) {
+    let planDone = !!s.plan && (!s.lesson || (s.attempts > 0 && acc >= PASS_PCT));
+    if (s.test) {
+        const passed = s.attempts > 0 && acc >= UNIT_PASS_PCT;
+        const prev = app.store.unitTests[s.test];
+        if (passed) {
+            app.store.unitTests[s.test] = { best: Math.max(acc, prev ? prev.best : 0), date: dateKey() };
+            unitLessons(s.test).forEach(l => { if (!app.store.guided[l.id]) app.store.guided[l.id] = { best: acc, date: dateKey(), tested: true }; });
+            save();
+        }
+        title = passed ? 'Unit passed!' : 'Not yet';
+        msg = passed ? `Every lesson in ${s.test} is now complete.` : `Score ${UNIT_PASS_PCT}% or more to pass. Review the lessons, then try again.`;
+        const next = nextLesson();
+        lessonActions = passed && next ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${next.id}">${icon('arrow-right')}Next lesson</button>` : '';
+    } else if (s.lesson) {
         const passed = s.attempts > 0 && acc >= PASS_PCT;
         const after = lessonAfter(s.lesson);
         if (passed) {
+            planState().lesson = true;
             const prev = app.store.guided[s.lesson];
             app.store.guided[s.lesson] = { best: Math.max(acc, prev ? prev.best : 0), date: dateKey() };
             save();
@@ -2098,8 +2306,11 @@ function finishSession() {
             ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${after.id}">${icon('arrow-right')}Next lesson</button>`
             : !passed ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${s.lesson}">${icon('rotate')}Review the lesson</button>` : '';
     }
+    if (planDone) { planState()[s.plan] = true; save(); }
     if (acc >= 80 && s.attempts) confetti();
     const dueLeft = statsFor(allItems()).due;
+    const planNext = s.plan ? planSteps().find(st => !st.done) : null;
+    checkAchievements();
 
     const missed = [...s.missed.values()];
     $('#study-body').innerHTML = `<div class="results">
@@ -2121,9 +2332,11 @@ function finishSession() {
                     ${icon('volume', 'icon-sm')}
                 </button>`).join('')}
             </div></div>` : ''}
+        ${s.plan ? `<p class="plan-note">${planNext ? `Next in today's plan: <strong>${esc(planNext.label)}</strong>` : "That's today's plan done. 수고했어요!"}</p>` : ''}
         <div class="results-actions">
+            ${planNext ? `<button type="button" class="btn btn-primary btn-lg" data-action="plan-start">${icon('arrow-right')}Continue plan</button>` : ''}
             ${s.lesson ? `${lessonActions}
-                <button type="button" class="btn ${lessonActions ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}Retake quiz</button>
+                <button type="button" class="btn ${lessonActions || planNext ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}${s.test ? 'Retake test' : 'Retake quiz'}</button>
                 <button type="button" class="btn btn-ghost btn-lg" data-action="exit-to-learn">Back to path</button>`
             : `${missed.length ? `<button type="button" class="btn btn-primary btn-lg" data-action="practice-missed">${icon('target')}Practice ${plural(missed.length, 'missed word')}</button>` : ''}
                 <button type="button" class="btn ${missed.length ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}Go again</button>
@@ -2135,7 +2348,7 @@ function finishSession() {
 /* ------------------------------------------------------------------ */
 /* Event wiring                                                        */
 /* ------------------------------------------------------------------ */
-const sessionMode = () => (app.store.prefs.mode === 'speedMatch' ? 'quiz' : app.store.prefs.mode);
+const sessionMode = () => (['speedMatch', 'writing'].includes(app.store.prefs.mode) ? 'quiz' : app.store.prefs.mode);
 
 const actions = {
     'quick-start': () => startSession(),
@@ -2212,6 +2425,11 @@ const actions = {
     'exit-study': () => exitSession(),
     'replay-audio': () => { if (app.session && app.session.item) speakItem(app.session.item); },
     'start-lesson': el => startLesson(el.dataset.lesson),
+    'start-test': el => startSession({ items: lessonItems(lessonById(`test:${el.dataset.unit}`)), mode: 'lesson', reverse: false, lesson: `test:${el.dataset.unit}` }),
+    'skip-exercise': () => { const s = app.session; if (s && !s.locked) { Speaking.stop(); advance(); } },
+    'plan-start': () => { const step = planSteps().find(st => !st.done); if (step) step.run(); else toast("That's today's plan done!", 'success'); },
+    'learn-tab': el => { app.learnTab = el.dataset.tab; renderLearn(); },
+    'trace-group': el => startSession({ topics: [el.dataset.topic], mode: 'writing' }),
     'teach-next': () => teachStep(1),
     'teach-back': () => teachStep(-1),
     'build-tile': el => pickBuildTile(Number(el.dataset.index)),
@@ -2309,6 +2527,14 @@ function bindEvents() {
     document.addEventListener('input', e => {
         if (e.target.id === 'words-search') { app.words.query = e.target.value; renderWordResults(); }
         if (e.target.id === 'num-input') renderNumberReading(e.target.value);
+        if (e.target.id === 'notes-search') {
+            app.notesQuery = e.target.value;
+            const pos = e.target.selectionStart;
+            renderLearn();
+            const box = $('#notes-search');
+            box.focus();
+            box.setSelectionRange(pos, pos);
+        }
         if (e.target.id === 'speech-rate') {
             app.store.speechRate = parseFloat(e.target.value);
             $('#speech-rate-val').textContent = `${app.store.speechRate.toFixed(2)}×`;
@@ -2357,13 +2583,15 @@ function bindEvents() {
             continueSession();
             return;
         }
+        // The Hangul keyboard takes letter keys by position, before any other shortcut.
+        if (s.kb && handleKoKey(e)) return;
         if (inField) return;
 
         if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) { actions['replay-audio'](); return; }
 
-        if (s.mode === 'lesson' && (s.build || s.order)) {
+        if (s.ex && ['build', 'order', 'write', 'speak'].includes(s.ex.kind)) {
             if (e.key === 'Enter') { e.preventDefault(); checkExercise(); }
-            else if (e.key === 'Backspace') { e.preventDefault(); actions[s.build ? 'build-undo' : 'order-remove']({ dataset: { pos: s.order ? s.order.picked.length - 1 : 0 } }); }
+            else if (e.key === 'Backspace' && (s.build || s.order)) { e.preventDefault(); actions[s.build ? 'build-undo' : 'order-remove']({ dataset: { pos: s.order ? s.order.picked.length - 1 : 0 } }); }
             return;
         }
         if ((['quiz', 'speedMatch', 'listening'].includes(s.mode) || (s.mode === 'lesson' && s.q.options)) && /^[1-4]$/.test(e.key)) {
@@ -2406,7 +2634,9 @@ function init() {
     if (params.has('tab') || params.has('lang')) history.replaceState(null, '', location.pathname + (legacyTab ? `#/${legacyTab}` : location.hash));
 
     save();
+    checkAchievements();
     renderView();
+    if (app.freezeUsed) toast('A streak freeze covered yesterday. Your streak is safe.', 'success');
 
     if ('serviceWorker' in navigator && location.protocol !== 'file:') {
         navigator.serviceWorker.register('sw.js').catch(() => { /* offline support is optional */ });

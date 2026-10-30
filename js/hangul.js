@@ -74,6 +74,79 @@ const Hangul = (() => {
     const isConsonant = ch => !!ch && CHO.includes(ch);
     const isVowel = ch => !!ch && JUNG.includes(ch);
 
+    /* ---- Typing: turn a list of keyed letters into text, like a Korean keyboard does ---- */
+    const VOWEL_PAIRS = { 'ㅗㅏ': 'ㅘ', 'ㅗㅐ': 'ㅙ', 'ㅗㅣ': 'ㅚ', 'ㅜㅓ': 'ㅝ', 'ㅜㅔ': 'ㅞ', 'ㅜㅣ': 'ㅟ', 'ㅡㅣ': 'ㅢ' };
+    const FINAL_PAIRS = { 'ㄱㅅ': 'ㄳ', 'ㄴㅈ': 'ㄵ', 'ㄴㅎ': 'ㄶ', 'ㄹㄱ': 'ㄺ', 'ㄹㅁ': 'ㄻ', 'ㄹㅂ': 'ㄼ', 'ㄹㅅ': 'ㄽ', 'ㄹㅌ': 'ㄾ', 'ㄹㅍ': 'ㄿ', 'ㄹㅎ': 'ㅀ', 'ㅂㅅ': 'ㅄ' };
+    const FINAL_SPLIT = Object.fromEntries(Object.entries(FINAL_PAIRS).map(([pair, f]) => [f, [...pair]]));
+
+    // ['ㄷ','ㅏ','ㄹ','ㄱ'] → 닭 · ['ㅇ','ㅣ','ㄹ','ㄱ','ㅓ'] → 일거 (a final moves to the next block before a vowel).
+    function compose(keys) {
+        let out = '';
+        let cur = null;
+        const flush = () => {
+            if (cur) out += cur.i && cur.v ? join(cur.i, cur.v, cur.f || '') : cur.i || cur.v;
+            cur = null;
+        };
+        for (const k of keys) {
+            if (isConsonant(k)) {
+                if (cur && cur.i && cur.v && !cur.f && JONG.includes(k)) cur.f = k;
+                else if (cur && cur.f && FINAL_PAIRS[cur.f + k]) cur.f = FINAL_PAIRS[cur.f + k];
+                else { flush(); cur = { i: k }; }
+            } else if (isVowel(k)) {
+                if (cur && cur.i && !cur.v) cur.v = k;
+                else if (cur && cur.v && !cur.f && VOWEL_PAIRS[cur.v + k]) cur.v = VOWEL_PAIRS[cur.v + k];
+                else if (cur && cur.i && cur.f) {
+                    const [keep, move] = FINAL_SPLIT[cur.f] || ['', cur.f];
+                    cur.f = keep;
+                    flush();
+                    cur = { i: move, v: k };
+                } else { flush(); cur = { v: k }; }
+            } else { flush(); out += k; }
+        }
+        flush();
+        return out;
+    }
+
+    /* ---- Particles: 책을 → { stem: '책', particle: '을' } ---- */
+    const PARTICLES = ['에서', '을', '를', '은', '는', '이', '가', '에'];
+    // Which particles need a final consonant before them (true), no final (false), or either (null).
+    const PARTICLE_NEEDS_FINAL = { '을': true, '은': true, '이': true, '를': false, '는': false, '가': false, '에': null, '에서': null };
+    const NOT_PARTICLES = new Set(['같이', '여기', '거기', '저기', '아이', '오이']);
+
+    function particleOf(token) {
+        const word = String(token || '').replace(/[?.!,]/g, '');
+        if (NOT_PARTICLES.has(word)) return null;
+        for (const p of PARTICLES) {
+            if (!word.endsWith(p) || word.length <= p.length) continue;
+            const stem = word.slice(0, -p.length);
+            const last = split(stem[stem.length - 1]);
+            if (!last) continue;
+            const need = PARTICLE_NEEDS_FINAL[p];
+            if (need !== null && need !== !!last.final) continue;
+            return { stem, particle: p, final: !!last.final };
+        }
+        return null;
+    }
+
+    /* ---- How alike two Korean strings are (0–1), compared letter by letter ---- */
+    const letters = s => [...String(s || '')].flatMap(ch => {
+        const p = split(ch);
+        return p ? [p.initial, p.vowel, p.final].filter(Boolean) : /[가-힣ㄱ-ㅣ0-9a-z]/i.test(ch) ? [ch] : [];
+    });
+
+    function similarity(a, b) {
+        const x = letters(a), y = letters(b);
+        if (!x.length && !y.length) return 1;
+        const d = Array.from({ length: x.length + 1 }, (_, i) => [i, ...Array(y.length).fill(0)]);
+        for (let j = 1; j <= y.length; j++) d[0][j] = j;
+        for (let i = 1; i <= x.length; i++) {
+            for (let j = 1; j <= y.length; j++) {
+                d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (x[i - 1] === y[j - 1] ? 0 : 1));
+            }
+        }
+        return 1 - d[x.length][y.length] / Math.max(x.length, y.length);
+    }
+
     /* ---- Numbers ---- */
     const SINO_DIGITS = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
     const SINO_UNITS = ['', '십', '백', '천'];
@@ -129,5 +202,5 @@ const Hangul = (() => {
         return romanize(String(reading).replace(/([십백천만억])육/g, '$1뉵'));
     }
 
-    return { romanize, split, join, isConsonant, isVowel, CHO, JUNG, sino, native, nativeCounter, months: MONTHS, numberRom };
+    return { romanize, split, join, compose, particleOf, similarity, isConsonant, isVowel, CHO, JUNG, sino, native, nativeCounter, months: MONTHS, numberRom };
 })();

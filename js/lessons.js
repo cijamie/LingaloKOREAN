@@ -14,8 +14,12 @@ const UNITS = [
     { name: 'Read Hangul', desc: 'The alphabet, how letters stack into syllable blocks, and how they sound together.' },
     { name: 'First words', desc: 'Greetings, numbers, family, food, places and everyday verbs.' },
     { name: 'Sentences', desc: 'How Korean sentences work: word order, particles, and verb endings.' },
-    { name: 'Conversations', desc: 'Short real-life dialogues that put it all together.' }
+    { name: 'Conversations', desc: 'Short real-life dialogues that put it all together.' },
+    { name: 'Your class', desc: 'Every word from your class word list, ten at a time. Optional: not needed to finish the course.', optional: true }
 ];
+
+// Each unit ends with a test. Passing it (80%) completes every lesson in the unit, so you can test out of what you know.
+const UNIT_PASS_PCT = 80;
 
 const LESSONS = [
     /* ---- Read Hangul ---- */
@@ -500,5 +504,60 @@ const LESSONS = [
             }
         ],
         items: [['sent_talk', ['주말에 뭐 해요?', '친구를 만나요', '같이 영화 볼까요?', '좋아요', '몇 시에 만날까요?', '세 시에 만나요']]]
+    },
+    {
+        id: 'c5', unit: 'Conversations', title: 'At a restaurant', desc: '비빔밥 하나 주세요',
+        intro: ['Get a table, order, and pay.'],
+        concepts: [
+            {
+                title: 'Eating out',
+                text: ['Call staff over with *여기요!* ("over here!"). It is normal and polite in Korean restaurants.'],
+                dialogue: [['Staff', '몇 분이세요?', 'How many people?'], ['You', '두 명이에요.', 'Two people.'], ['Staff', '이쪽으로 오세요.', 'This way, please.'],
+                    ['You', '여기요! 비빔밥 하나 주세요.', 'Excuse me! One bibimbap, please.'], ['Staff', '네, 잠시만 기다리세요.', 'Sure, please wait a moment.'],
+                    ['You', '너무 맛있어요!', "It's really delicious!"], ['You', '계산해 주세요.', 'The bill, please.']]
+            }
+        ],
+        items: [['sent_talk', ['몇 분이세요?', '두 명이에요', '이쪽으로 오세요', '여기요', '비빔밥 하나 주세요', '너무 맛있어요']], ['sent_questions', ['계산해 주세요']]]
+    },
+    {
+        id: 'c6', unit: 'Conversations', title: 'Taking a taxi', desc: '서울역으로 가 주세요',
+        intro: ['Tell a driver where to go.'],
+        concepts: [
+            {
+                title: 'In the taxi',
+                text: ['Place + *(으)로 가 주세요* means "please go to…". 으로 after a consonant, 로 after a vowel or ㄹ.'],
+                dialogue: [['Driver', '어디로 가세요?', 'Where are you going?'], ['You', '서울역으로 가 주세요.', 'To Seoul Station, please.'], ['Driver', '네, 알겠습니다.', 'Okay, got it.'],
+                    ['You', '얼마나 걸려요?', 'How long does it take?'], ['Driver', '이십 분쯤 걸려요.', 'About twenty minutes.'], ['You', '여기서 세워 주세요.', 'Please stop here.']]
+            }
+        ],
+        items: [['sent_talk', ['어디로 가세요?', '서울역으로 가 주세요', '알겠습니다', '얼마나 걸려요?', '이십 분쯤 걸려요', '여기서 세워 주세요']]]
+    },
+    {
+        id: 'c7', unit: 'Conversations', title: 'Shopping', desc: '깎아 주세요',
+        intro: ['Ask the price, haggle a little, and buy.'],
+        concepts: [
+            {
+                title: 'At the market',
+                text: ['Prices use Sino-Korean numbers: 만 오천 원 is 15,000 won. Asking for a discount (*깎아 주세요*) is common at traditional markets, less so in shops.'],
+                dialogue: [['You', '이거 얼마예요?', 'How much is this?'], ['Staff', '만 오천 원이에요.', "It's 15,000 won."], ['You', '좀 비싸요. 깎아 주세요.', "It's a bit expensive. Can you give me a discount?"],
+                    ['Staff', '그럼 만 삼천 원에 드릴게요.', "Then I'll give it to you for 13,000 won."], ['You', '좋아요. 이걸로 할게요.', "Great. I'll take this one."],
+                    ['Staff', '봉투 필요하세요?', 'Do you need a bag?'], ['You', '아니요, 괜찮아요.', "No, I'm fine."]]
+            }
+        ],
+        items: [['sent_talk', ['만 오천 원이에요', '좀 비싸요', '깎아 주세요', '이걸로 할게요', '봉투 필요하세요?']], ['travel', ['얼마예요']]]
     }
 ];
+
+/* ---- Your class: the class word list, ten words per lesson ---- */
+(typeof KOREAN_CLASS_LESSONS !== 'undefined' ? KOREAN_CLASS_LESSONS : []).forEach(l => {
+    const title = l.id === '읽기' ? 'Reading' : `Lesson ${parseInt(l.id, 10)}`;
+    const keys = [...new Set(l.words.map(w => w.word))];
+    for (let p = 0; p * 10 < keys.length; p++) {
+        const part = keys.slice(p * 10, p * 10 + 10);
+        LESSONS.push({
+            id: `k_${l.id}_${p + 1}`, unit: 'Your class', title: `${title} · part ${p + 1}`, desc: part.slice(0, 3).join(' '),
+            intro: [`Words from your class ${title}${l.theme ? `: ${l.theme}` : ''}.`],
+            items: [[`class_${l.id}`, part]]
+        });
+    }
+});
