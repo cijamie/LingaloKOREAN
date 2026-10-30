@@ -917,6 +917,70 @@ body.is-studying { overflow: hidden; }
     resize: vertical; word-break: break-all;
 }
 
+/* Mnemonics */
+.mnemonic { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 8px; padding: 8px 12px; border-radius: var(--r); background: var(--accent-soft); color: var(--text-2); font-size: 14px; }
+.mnemonic strong { color: var(--accent-ink); font-weight: 800; }
+.mnemonic-sound { font-weight: 700; color: var(--text); }
+.mnemonic-sm { justify-content: flex-start; margin-top: 6px; padding: 5px 8px; font-size: 12.5px; gap: 6px; }
+.mnemonic-lg { font-size: 17px; padding: 10px 16px; }
+.feedback-ex strong { color: var(--accent-ink); }
+
+/* Learn: guided path */
+.guided-banner { display: flex; align-items: center; gap: 14px; margin-top: 16px; }
+.guided-banner .mode-icon { background: var(--accent-soft); color: var(--accent-ink); flex: none; }
+.guided-banner-text { flex: 1; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.guided-summary { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.guided-summary > div { flex: 1; display: flex; flex-direction: column; gap: 6px; max-width: 520px; }
+.guided-summary strong { font-size: 17px; }
+.section-head h2 { display: flex; align-items: center; gap: 10px; }
+.lesson-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.lesson {
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+}
+.lesson.is-next { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
+.lesson-num {
+    width: 32px; height: 32px; border-radius: 50%; flex: none;
+    display: grid; place-items: center;
+    background: var(--surface-2); color: var(--text-3);
+    font-weight: 800; font-size: 13px;
+}
+.lesson.is-next .lesson-num { background: var(--accent); color: #fff; }
+.lesson.is-done .lesson-num { background: var(--success-soft); color: var(--success); }
+.lesson-body { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.lesson-body strong { font-size: 15px; }
+.lesson-desc { font-size: 15px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chart-note { margin: 4px 0 0; }
+.letter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.letter-tile {
+    display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+    padding: 10px 12px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    transition: border-color .15s, background .15s;
+}
+.letter-tile:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.letter-tile.pulse { animation: pulse .4s var(--ease); }
+.letter-key { font-size: 28px; font-weight: 700; line-height: 1.2; }
+.letter-sound { font-size: 13px; font-weight: 700; color: var(--accent-ink); }
+.letter-mn { font-size: 12.5px; color: var(--text-3); line-height: 1.35; }
+.letter-mn strong { color: var(--text); }
+
+/* Teaching cards */
+.teach-intro { gap: 10px; padding: 28px 24px; }
+.teach-intro h2 { font-size: 28px; font-weight: 800; }
+.teach-preview { font-size: 30px; font-weight: 600; letter-spacing: .08em; color: var(--text-2); overflow-wrap: anywhere; }
+.teach-tips { margin: 4px 0; padding-left: 20px; text-align: left; color: var(--text-2); display: flex; flex-direction: column; gap: 6px; }
+.teach-sound { font-size: 22px; font-weight: 700; color: var(--accent-ink); }
+.teach-play { margin-top: 10px; }
+.teach-card .back-def { margin-top: 0; }
+.fc-actions .teach-next { flex: 1; }
+
 /* --- Responsive ---------------------------------------------------------- */
 @media (max-width: 1000px) {
     .stat-grid { grid-template-columns: repeat(2, 1fr); }
@@ -981,6 +1045,11 @@ body.is-studying { overflow: hidden; }
     .start-bar { padding: 12px; }
     .start-bar .btn { padding: 0 18px; }
     .words-summary { flex-wrap: wrap; }
+    .guided-banner, .guided-summary { flex-wrap: wrap; }
+    .guided-banner .btn, .guided-summary .btn { flex: 1 1 100%; }
+    .lesson { padding: 10px 12px; gap: 10px; }
+    .letter-grid { grid-template-columns: 1fr 1fr; }
+    .bottom-nav a { font-size: 10px; }
 
     .study-bar { padding: 10px 12px; gap: 10px; }
     .prompt { padding: 22px 14px 18px; }

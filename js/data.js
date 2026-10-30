@@ -35,6 +35,14 @@ const TOPICS = [
         id: 'diphthongs', group: 'Hangul', label: 'Combined vowels', chars: true,
         words: { 'ㅐ': 'ae', 'ㅒ': 'yae', 'ㅔ': 'e', 'ㅖ': 'ye', 'ㅘ': 'wa', 'ㅙ': 'wae', 'ㅚ': 'oe', 'ㅝ': 'wo', 'ㅞ': 'we', 'ㅟ': 'wi', 'ㅢ': 'ui' }
     },
+    {
+        id: 'syllables', group: 'Hangul', label: 'Syllable blocks', sub: 'Consonant + vowel', chars: true,
+        words: {
+            '가': 'ga', '나': 'na', '다': 'da', '라': 'ra', '마': 'ma', '바': 'ba', '사': 'sa', '아': 'a', '자': 'ja', '하': 'ha',
+            '고': 'go', '노': 'no', '도': 'do', '모': 'mo', '소': 'so', '구': 'gu', '누': 'nu', '부': 'bu', '수': 'su', '우': 'u',
+            '기': 'gi', '미': 'mi', '시': 'si', '머': 'meo', '서': 'seo', '어': 'eo', '으': 'eu', '크': 'keu', '토': 'to', '피': 'pi'
+        }
+    },
 
     /* ---- Numbers ---- */
     {
@@ -198,3 +206,54 @@ const TOPICS = [
         }
     }
 ];
+
+// Picture hooks for each letter: letter: [sound, mnemonic]. *Stars* mark the letters to stress.
+const MNEMONICS = {
+    /* Basic consonants */
+    'ㄱ': ['g / k', '*G*un'],
+    'ㄴ': ['n', '*N*ose (the side profile of a nose)'],
+    'ㄷ': ['d / t', '*D*oor (a partly opened door)'],
+    'ㄹ': ['r / l', '*R*attlesnake (a slithering snake shape)'],
+    'ㅁ': ['m', '*M*outh (open in a wide square)'],
+    'ㅂ': ['b / p', '*B*ed (with a headboard and footboard)'],
+    'ㅅ': ['s', '*S*ummit of a mountain, or a *S*lide'],
+    'ㅇ': ['ng / silent', 'Ri*ng* at the bottom of a block; a silent zero at the top'],
+    'ㅈ': ['j', '*J*ug (with a spout pointing out)'],
+    'ㅊ': ['ch', '*Ch*urch (the jug with a steeple on top)'],
+    'ㅋ': ['k', '*K*ey (sticking into a lock)'],
+    'ㅌ': ['t', '*T*eeth (a set of front teeth)'],
+    'ㅍ': ['p', '*P*illars (two columns holding up a roof)'],
+    'ㅎ': ['h', '*H*at (a top hat sitting on a head)'],
+
+    /* Double consonants: two of the same letter, said tense and sharp with no puff of air */
+    'ㄲ': ['kk', 'Two *G*uns: a tense, sharper g'],
+    'ㄸ': ['tt', 'Two *D*oors: a tense, sharper d'],
+    'ㅃ': ['pp', 'Two *B*eds: a tense, sharper b'],
+    'ㅆ': ['ss', 'Two *S*lides: a hissing, tense s'],
+    'ㅉ': ['jj', 'Two *J*ugs: a tense, sharper j'],
+
+    /* Basic vowels: follow the short stroke */
+    'ㅏ': ['a (ah)', 'Arm pointing *A*way (to the right)'],
+    'ㅓ': ['eo (uh)', 'Arm pointing *I*n (to the left, toward the body)'],
+    'ㅗ': ['o (oh)', 'Pointing *O*ver (up)'],
+    'ㅜ': ['u (ooh)', 'Pointing *U*nder (down)'],
+    'ㅡ': ['eu (uh)', 'Flat like the *E*arth'],
+    'ㅣ': ['i (ee)', 'Standing tall like a tr*ee*'],
+    'ㅑ': ['ya', 'Two strokes add a *Y*: ㅏ (a) → ㅑ (ya)'],
+    'ㅕ': ['yeo', 'Two strokes add a *Y*: ㅓ (eo) → ㅕ (yeo)'],
+    'ㅛ': ['yo', 'Two strokes add a *Y*: ㅗ (o) → ㅛ (yo)'],
+    'ㅠ': ['yu', 'Two strokes add a *Y*: ㅜ (u) → ㅠ (yu)'],
+
+    /* Combined vowels: the parts, said quickly together */
+    'ㅐ': ['ae (eh)', 'ㅏ + ㅣ squeezed together'],
+    'ㅔ': ['e (eh)', 'ㅓ + ㅣ; sounds almost the same as ㅐ'],
+    'ㅒ': ['yae', 'ㅐ with the *Y* stroke'],
+    'ㅖ': ['ye', 'ㅔ with the *Y* stroke'],
+    'ㅘ': ['wa', 'ㅗ + ㅏ: o + a, said fast'],
+    'ㅙ': ['wae', 'ㅗ + ㅐ: o + ae, said fast'],
+    'ㅚ': ['oe (we)', 'ㅗ + ㅣ; today said like "we"'],
+    'ㅝ': ['wo', 'ㅜ + ㅓ: u + eo, said fast'],
+    'ㅞ': ['we', 'ㅜ + ㅔ: u + e, said fast'],
+    'ㅟ': ['wi', 'ㅜ + ㅣ: u + i, said fast'],
+    'ㅢ': ['ui', 'ㅡ + ㅣ: eu + i, said fast']
+};

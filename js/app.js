@@ -1,8 +1,8 @@
 /**
  * LingaloKR — application logic
- * Views (hash-routed): home, practice, numbers, words, settings.
- * The study session runs in a full-screen overlay on top of the current view.
- * Data: data.js (topics), korean_class_words.js (class lessons), examples.js, hangul.js.
+ * Views (hash-routed): home, learn, practice, numbers, words, settings.
+ * The study session (and guided lessons) run in a full-screen overlay on top of the current view.
+ * Data: data.js (topics, mnemonics), lessons.js (guided path), korean_class_words.js (class lessons), examples.js, hangul.js.
  */
 'use strict';
 
@@ -54,7 +54,8 @@ const MODES = {
     matchPairs: { label: 'Match pairs', desc: 'Connect each word to its meaning', icon: 'grid' }
 };
 const LENGTHS = [10, 15, 25, 0];
-const VIEWS = ['home', 'practice', 'numbers', 'words', 'settings'];
+const VIEWS = ['home', 'learn', 'practice', 'numbers', 'words', 'settings'];
+const PASS_PCT = 60;
 
 const defaults = () => ({
     version: 6,
@@ -62,6 +63,7 @@ const defaults = () => ({
     srs: {},
     history: {},
     customList: {},
+    guided: {},
     totalXP: 0,
     todayXP: 0,
     todayDate: null,
@@ -100,7 +102,7 @@ function loadProgress() {
 
     const base = defaults();
     const s = { ...base, ...saved, prefs: { ...base.prefs, ...(saved.prefs || {}) }, version: 6 };
-    ['mastery', 'srs', 'history', 'customList'].forEach(k => { if (!s[k] || typeof s[k] !== 'object') s[k] = {}; });
+    ['mastery', 'srs', 'history', 'customList', 'guided'].forEach(k => { if (!s[k] || typeof s[k] !== 'object') s[k] = {}; });
     if (!s.prefs.topics) s.prefs.topics = {};
     if (!MODES[s.prefs.mode]) s.prefs.mode = 'quiz';
 
@@ -259,6 +261,49 @@ const allItems = () => uniqueItems(getTopics().map(t => t.items));
 const topicById = id => getTopics().find(t => t.id === id);
 const poolFor = ids => uniqueItems(ids.map(id => (topicById(id) || { items: [] }).items));
 const exampleFor = item => (item.gen ? null : EXAMPLES[item.id] || (item.id === item.key ? EXAMPLES[item.key] : null));
+
+/* ------------------------------------------------------------------ */
+/* Mnemonics                                                           */
+/* ------------------------------------------------------------------ */
+const mnemonicFor = item => (item && item.isChar ? MNEMONICS[item.key] || null : null);
+
+// "*G*un" → "<strong>G</strong>un", escaped.
+const mnemonicText = text => esc(text).replace(/\*([^*]+)\*/g,'<strong>$1</strong>');
+
+function mnemonicLine(item, cls = '') {
+    const mn = mnemonicFor(item);
+    return mn ? `<div class="mnemonic ${cls}"><span class="mnemonic-sound">${esc(mn[0])}</span><span>${mnemonicText(mn[1])}</span></div>` : '';
+}
+
+// A single letter read aloud gives its name (ㄱ = "giyeok"), so letters are spoken
+// inside a syllable instead: consonants with ㅏ, vowels after a silent ㅇ.
+const JAMO_INITIALS = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+const JAMO_VOWELS = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+function sampleSyllable(letter) {
+    const c = JAMO_INITIALS.indexOf(letter);
+    if (c >= 0) return String.fromCharCode(0xac00 + c * 588);
+    const v = JAMO_VOWELS.indexOf(letter);
+    if (v >= 0) return String.fromCharCode(0xac00 + 11 * 588 + v * 28);
+    return letter;
+}
+const speakItem = item => speak(item.isChar ? sampleSyllable(item.key) : item.key);
+
+/* ------------------------------------------------------------------ */
+/* Guided path                                                         */
+/* ------------------------------------------------------------------ */
+const lessonById = id => LESSONS.find(l => l.id === id);
+const lessonDone = id => !!app.store.guided[id];
+const nextLesson = () => LESSONS.find(l => !lessonDone(l.id)) || null;
+const lessonAfter = id => LESSONS[LESSONS.findIndex(l => l.id === id) + 1] || null;
+
+function lessonItems(lesson) {
+    return lesson.items.flatMap(([topicId, keys]) => {
+        const topic = topicById(topicId);
+        return topic ? keys.map(k => topic.items.find(i => i.key === k)).filter(Boolean) : [];
+    });
+}
+
+const lessonNoun = lesson => (lesson.items[0][0] === 'syllables' ? 'syllable' : lessonItems(lesson).every(i => i.isChar) ? 'letter' : 'word');
 
 function statsFor(items) {
     const m = masteryMap();
@@ -502,7 +547,7 @@ function renderView() {
         a.classList.toggle('is-active', on);
         if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    ({ home: renderHome, practice: renderPractice, numbers: renderNumbers, words: renderWords, settings: renderSettings })[app.view]();
+    ({ home: renderHome, learn: renderLearn, practice: renderPractice, numbers: renderNumbers, words: renderWords, settings: renderSettings })[app.view]();
     renderHeaderStats();
 }
 
@@ -605,6 +650,8 @@ function renderHome() {
                 </div>
             </div>
         </section>
+
+        ${guidedBanner()}
 
         <section class="stat-grid">
             <div class="stat">
@@ -724,6 +771,87 @@ function renderActivity() {
             </div>
         </div>
     </section>`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Learn (guided path)                                                 */
+/* ------------------------------------------------------------------ */
+// Home shows where the guided path is up to until every lesson is done.
+function guidedBanner() {
+    const next = nextLesson();
+    if (!next) return '';
+    const done = LESSONS.filter(l => lessonDone(l.id)).length;
+    return `<section class="panel guided-banner">
+        <span class="mode-icon">${icon('learn')}</span>
+        <div class="guided-banner-text">
+            <strong>${done ? 'Continue the guided path' : 'New to Korean? Start the guided path'}</strong>
+            <span class="muted small">Lesson ${LESSONS.indexOf(next) + 1} of ${LESSONS.length}: ${esc(next.title)} · ${esc(next.unit)}</span>
+            ${bar(Math.round(done / LESSONS.length * 100))}
+        </div>
+        <button type="button" class="btn btn-primary" data-action="start-lesson" data-lesson="${next.id}">${icon('play', 'icon-sm')}${done ? 'Continue' : 'Start'}</button>
+    </section>`;
+}
+
+function lessonRow(lesson, n, upNext) {
+    const rec = app.store.guided[lesson.id];
+    const state = rec ? 'is-done' : upNext ? 'is-next' : '';
+    return `<li class="lesson ${state}">
+        <span class="lesson-num">${rec ? icon('check', 'icon-sm') : n}</span>
+        <div class="lesson-body">
+            <strong>${esc(lesson.title)}</strong>
+            <span class="lesson-desc lang-text">${esc(lesson.desc)}</span>
+            <span class="muted small">${plural(lessonItems(lesson).length, lessonNoun(lesson))}${rec ? ` · best ${rec.best}%` : ''}</span>
+        </div>
+        <button type="button" class="btn btn-sm ${upNext ? 'btn-primary' : 'btn-secondary'}" data-action="start-lesson" data-lesson="${lesson.id}">${upNext ? `${icon('play', 'icon-sm')}Start` : rec ? 'Review' : 'Open'}</button>
+    </li>`;
+}
+
+function letterTile(item) {
+    const mn = mnemonicFor(item);
+    return `<button type="button" class="letter-tile" data-action="speak" data-text="${esc(sampleSyllable(item.key))}" aria-label="Play ${esc(item.key)}">
+        <span class="letter-key lang-text">${esc(item.key)}</span>
+        <span class="letter-sound">${esc(mn ? mn[0] : item.rom)}</span>
+        ${mn ? `<span class="letter-mn">${mnemonicText(mn[1])}</span>` : ''}
+    </button>`;
+}
+
+function renderLearn() {
+    const next = nextLesson();
+    const done = LESSONS.filter(l => lessonDone(l.id)).length;
+    const units = [...new Set(LESSONS.map(l => l.unit))];
+    const chart = [['consonants', 'Consonants'], ['vowels', 'Vowels'], ['doubleConsonants', 'Double consonants'], ['diphthongs', 'Combined vowels']];
+
+    $('#view-learn').innerHTML = `
+        <header class="page-head">
+            <h1>Learn</h1>
+            <p class="lead">A guided path from the alphabet to your first words. Each lesson teaches a few new things, then quizzes you on them.</p>
+        </header>
+
+        <section class="panel guided-summary">
+            <div>
+                <strong>${done === LESSONS.length ? 'Path complete. 잘했어요!' : plural(done, 'lesson') + ' of ' + LESSONS.length + ' done'}</strong>
+                <span class="muted small">${next ? `Up next: ${esc(next.title)}` : 'Keep your words fresh with daily reviews on Home.'}</span>
+                ${bar(Math.round(done / LESSONS.length * 100))}
+            </div>
+            ${next ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${next.id}">${icon('play')}${done ? 'Continue' : 'Start lesson 1'}</button>` : ''}
+        </section>
+
+        ${units.map((u, ui) => {
+            const ls = LESSONS.filter(l => l.unit === u);
+            const udone = ls.filter(l => lessonDone(l.id)).length;
+            return `<section class="section">
+                <div class="section-head"><h2><span class="step">${ui + 1}</span>${esc(u)}</h2><span class="muted small">${udone} / ${ls.length}</span></div>
+                <ol class="lesson-list">${ls.map(l => lessonRow(l, LESSONS.indexOf(l) + 1, next === l)).join('')}</ol>
+            </section>`;
+        }).join('')}
+
+        <section class="section">
+            <div class="section-head"><h2>Hangul chart</h2><span class="muted small">Tap a letter to hear it</span></div>
+            <p class="muted small chart-note">A picture for every letter. Vowels: follow the short stroke. Two short strokes add a "y": ㅏ → ㅑ, ㅓ → ㅕ, ㅗ → ㅛ, ㅜ → ㅠ.</p>
+            ${chart.map(([id, label]) => `
+                <h3 class="group-title">${label}</h3>
+                <div class="letter-grid">${(topicById(id) || { items: [] }).items.map(letterTile).join('')}</div>`).join('')}
+        </section>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1009,6 +1137,7 @@ function renderWordResults() {
             <div class="word-key lang-text">${esc(i.key)}</div>
             ${i.rom && !i.isChar ? `<div class="word-rom">${esc(i.rom)}</div>` : ''}
             <div class="word-def">${esc(i.def)}</div>
+            ${mnemonicLine(i, 'mnemonic-sm')}
             ${ex ? `<div class="word-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
         </div>`;
     }).join('')}</div>` : empty);
@@ -1213,13 +1342,96 @@ async function readTransferCode(code) {
 /* ------------------------------------------------------------------ */
 /* Study session                                                       */
 /* ------------------------------------------------------------------ */
-function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill } = {}) {
+function openStudyScreen(mode) {
+    $('#study').hidden = false;
+    document.body.classList.add('is-studying');
+    // Keyboard shortcuts shouldn't also press the button that opened the session.
+    if (document.activeElement) document.activeElement.blur();
+    // Snap the progress bar back to empty instead of animating down from the last session.
+    const fill = $('#study-progress-fill');
+    fill.style.transition = 'none';
+    fill.style.width = '0%';
+    void fill.offsetWidth;
+    fill.style.transition = '';
+    $('#study-timer').hidden = mode !== 'speedMatch';
+    $('#study-count').hidden = mode === 'speedMatch';
+    $('#study-streak').hidden = mode === 'teach';
+}
+
+/* Guided lesson: an intro card, one teaching card per item, then a quiz on them. */
+function startLesson(id) {
+    const lesson = lessonById(id);
+    const items = lesson ? lessonItems(lesson) : [];
+    if (!items.length) return;
+    stopTimer();
+    app.session = { mode: 'teach', lesson: id, items, queue: items, pool: items, index: -1, item: null, xp: 0 };
+    openStudyScreen('teach');
+    renderTeach();
+}
+
+function renderTeach() {
+    const s = app.session;
+    const lesson = lessonById(s.lesson);
+    const n = s.items.length;
+    const noun = lessonNoun(lesson);
+    updateStudyBar();
+    const body = $('#study-body');
+
+    if (s.index < 0) {
+        s.item = null;
+        body.innerHTML = `<div class="study-card">
+            <div class="prompt teach-intro">
+                <div class="prompt-label">Lesson ${LESSONS.indexOf(lesson) + 1} · ${esc(lesson.unit)}</div>
+                <h2>${esc(lesson.title)}</h2>
+                <div class="teach-preview lang-text">${s.items.map(i => esc(i.key)).join(' ')}</div>
+                <ul class="teach-tips">${lesson.intro.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
+                <span class="muted small">${plural(n, `new ${noun}`)}, then a short quiz.</span>
+            </div>
+            <button type="button" class="btn btn-primary btn-lg btn-block" data-action="teach-next">Let's go <kbd>Enter</kbd></button>
+        </div>`;
+        return;
+    }
+
+    const it = s.items[s.index];
+    s.item = it;
+    const mn = mnemonicFor(it);
+    const ex = exampleFor(it);
+    const last = s.index === n - 1;
+    body.innerHTML = `<div class="study-card">
+        <div class="prompt teach-card">
+            <div class="prompt-label">New ${noun} · ${s.index + 1} of ${n}</div>
+            <div class="prompt-text lang-text ${[...it.key].length > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>
+            ${it.isChar
+                ? `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>`
+                : `<div class="teach-sound">${esc(it.rom)}</div><div class="back-def">${esc(it.def)}</div>`}
+            ${mn ? `<div class="mnemonic mnemonic-lg"><span>${mnemonicText(mn[1])}</span></div>` : ''}
+            ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
+            <button type="button" class="btn btn-secondary btn-sm teach-play" data-action="replay-audio">${icon('volume', 'icon-sm')}${it.isChar && sampleSyllable(it.key) !== it.key ? `Hear it in <span class="lang-text">${esc(sampleSyllable(it.key))}</span>` : 'Hear it'}</button>
+        </div>
+        <div class="fc-actions">
+            <button type="button" class="btn btn-secondary btn-lg" data-action="teach-back">Back</button>
+            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="teach-next">${last ? 'Start the quiz' : 'Got it'} <kbd>Enter</kbd></button>
+        </div>
+    </div>`;
+    speakItem(it);
+}
+
+function teachStep(dir) {
+    const s = app.session;
+    if (!s || s.mode !== 'teach') return;
+    if (dir < 0 && s.index <= 0) return;
+    s.index += dir;
+    if (s.index >= s.items.length) startSession({ items: s.items, mode: 'quiz', reverse: false, lesson: s.lesson });
+    else renderTeach();
+}
+
+function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill, lesson } = {}) {
     const pool = items || poolFor(topics || selectedTopicIds());
     if (!pool.length) { toast('Pick at least one topic that has words in it.', 'error'); return; }
     if (mode === 'matchPairs' && pool.length < 2) mode = 'flashcards';
     if (mode === 'listening' && !koreanVoice()) toast('No Korean voice found on this device, so audio may not play.', 'error');
 
-    const length = drill ? 0 : app.store.prefs.length;
+    const length = drill || lesson ? 0 : app.store.prefs.length;
     const t = dayNum();
     let queue;
     if (mode === 'speedMatch') {
@@ -1234,23 +1446,14 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
 
     stopTimer();
     app.session = {
-        mode, pool, queue, topics, items, drill,
+        mode, pool, queue, topics, items, drill, lesson,
         reverse: reverse !== undefined ? reverse : app.store.prefs.reverse,
         index: 0, correct: 0, attempts: 0, streak: 0, best: 0, xp: 0,
         missed: new Map(), repeats: new Map(),
         locked: false, revealed: false, done: false,
         timeLeft: 60, timer: null, board: null
     };
-    $('#study').hidden = false;
-    document.body.classList.add('is-studying');
-    // Snap the progress bar back to empty instead of animating down from the last session.
-    const fill = $('#study-progress-fill');
-    fill.style.transition = 'none';
-    fill.style.width = '0%';
-    void fill.offsetWidth;
-    fill.style.transition = '';
-    $('#study-timer').hidden = mode !== 'speedMatch';
-    $('#study-count').hidden = mode === 'speedMatch';
+    openStudyScreen(mode);
 
     if (mode === 'speedMatch') startTimer();
     if (mode === 'matchPairs') nextBoard(); else nextQuestion();
@@ -1283,6 +1486,11 @@ function stopTimer() {
 
 function updateStudyBar() {
     const s = app.session;
+    if (s.mode === 'teach') {
+        $('#study-progress-fill').style.width = `${(s.index + 1) / (s.items.length + 1) * 100}%`;
+        $('#study-count').textContent = s.index < 0 ? 'Intro' : `${s.index + 1} / ${s.items.length}`;
+        return;
+    }
     let pct;
     if (s.mode === 'speedMatch') pct = (60 - s.timeLeft) / 60 * 100;
     else if (s.mode === 'matchPairs') pct = s.correct / s.queue.length * 100;
@@ -1382,6 +1590,7 @@ function nextQuestion() {
                         <div class="back-key lang-text">${esc(it.key)}</div>
                         ${it.rom && !it.isChar ? `<div class="back-rom">${esc(it.rom)}</div>` : ''}
                         <div class="back-def">${esc(it.def)}</div>
+                        ${mnemonicLine(it)}
                         ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
                     </div>
                 </div>
@@ -1400,8 +1609,8 @@ function nextQuestion() {
         setTimeout(() => { const el = $('#type-input'); if (el) el.focus(); }, 30);
     }
 
-    if (s.mode === 'listening') setTimeout(() => speak(s.item.key), 150);
-    else if (app.store.autoAudio && s.q.promptLang) speak(s.item.key);
+    if (s.mode === 'listening') setTimeout(() => speakItem(s.item), 150);
+    else if (app.store.autoAudio && s.q.promptLang) speakItem(s.item);
 }
 
 function advance() {
@@ -1460,6 +1669,7 @@ function showFeedback(ok, extra = '') {
         <div class="feedback-text">
             <strong>${ok ? 'Correct!' : 'Not quite'}</strong>
             <span>${extra || answerText(s.item)}</span>
+            ${mnemonicFor(s.item) ? `<span class="feedback-ex">${mnemonicText(mnemonicFor(s.item)[1])}</span>` : ''}
             ${ex ? `<span class="feedback-ex"><span class="lang-text">${esc(ex[0])}</span> ${esc(ex[1])}</span>` : ''}
         </div>
         <button type="button" class="btn ${ok ? 'btn-success' : 'btn-primary'}" data-action="continue" id="continue-btn">Continue <kbd>Enter</kbd></button>
@@ -1528,7 +1738,7 @@ function flipCard() {
     if (!s || s.revealed) return;
     s.revealed = true;
     $('#flashcard').classList.add('is-flipped');
-    speak(s.item.key);
+    speakItem(s.item);
     $('#fc-actions').innerHTML = `
         <button type="button" class="btn btn-rate rate-again" data-action="rate" data-rating="again"><strong>Again</strong><kbd>1</kbd></button>
         <button type="button" class="btn btn-rate rate-good" data-action="rate" data-rating="good"><strong>Good</strong><kbd>2</kbd></button>
@@ -1626,8 +1836,27 @@ function finishSession() {
     save();
     updateStudyBar();
     const acc = s.attempts ? Math.round(s.correct / s.attempts * 100) : 0;
-    const title = s.mode === 'speedMatch' ? "Time's up!" : acc >= 90 ? 'Excellent work!' : acc >= 70 ? 'Nice session!' : 'Session complete';
-    const msg = acc >= 90 ? 'You really know these.' : acc >= 70 ? 'Solid progress. Keep it up.' : 'Every miss makes the next try easier.';
+    let title = s.mode === 'speedMatch' ? "Time's up!" : acc >= 90 ? 'Excellent work!' : acc >= 70 ? 'Nice session!' : 'Session complete';
+    let msg = acc >= 90 ? 'You really know these.' : acc >= 70 ? 'Solid progress. Keep it up.' : 'Every miss makes the next try easier.';
+
+    // Guided lessons count as done once the quiz is passed.
+    let lessonActions = '';
+    if (s.lesson) {
+        const passed = s.attempts > 0 && acc >= PASS_PCT;
+        const after = lessonAfter(s.lesson);
+        if (passed) {
+            const prev = app.store.guided[s.lesson];
+            app.store.guided[s.lesson] = { best: Math.max(acc, prev ? prev.best : 0), date: dateKey() };
+            save();
+        }
+        title = passed ? 'Lesson complete!' : 'Almost there';
+        msg = passed
+            ? (after ? `Up next: ${after.title}.` : 'You finished the guided path. Keep reviewing on Home.')
+            : `Score ${PASS_PCT}% or more to finish the lesson. Have another look, then try again.`;
+        lessonActions = passed && after
+            ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${after.id}">${icon('arrow-right')}Next lesson</button>`
+            : !passed ? `<button type="button" class="btn btn-primary btn-lg" data-action="start-lesson" data-lesson="${s.lesson}">${icon('rotate')}Review the lesson</button>` : '';
+    }
     if (acc >= 80 && s.attempts) confetti();
     const dueLeft = statsFor(allItems()).due;
 
@@ -1652,9 +1881,12 @@ function finishSession() {
                 </button>`).join('')}
             </div></div>` : ''}
         <div class="results-actions">
-            ${missed.length ? `<button type="button" class="btn btn-primary btn-lg" data-action="practice-missed">${icon('target')}Practice ${plural(missed.length, 'missed word')}</button>` : ''}
-            <button type="button" class="btn ${missed.length ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}Go again</button>
-            <button type="button" class="btn btn-ghost btn-lg" data-action="exit-study">Done</button>
+            ${s.lesson ? `${lessonActions}
+                <button type="button" class="btn ${lessonActions ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}Retake quiz</button>
+                <button type="button" class="btn btn-ghost btn-lg" data-action="exit-to-learn">Back to path</button>`
+            : `${missed.length ? `<button type="button" class="btn btn-primary btn-lg" data-action="practice-missed">${icon('target')}Practice ${plural(missed.length, 'missed word')}</button>` : ''}
+                <button type="button" class="btn ${missed.length ? 'btn-secondary' : 'btn-primary'} btn-lg" data-action="restart">${icon('rotate')}Go again</button>
+                <button type="button" class="btn btn-ghost btn-lg" data-action="exit-study">Done</button>`}
         </div>
     </div>`;
 }
@@ -1737,7 +1969,11 @@ const actions = {
         toast('Progress reset.');
     },
     'exit-study': () => exitSession(),
-    'replay-audio': () => { if (app.session && app.session.item) speak(app.session.item.key); },
+    'replay-audio': () => { if (app.session && app.session.item) speakItem(app.session.item); },
+    'start-lesson': el => startLesson(el.dataset.lesson),
+    'teach-next': () => teachStep(1),
+    'teach-back': () => teachStep(-1),
+    'exit-to-learn': () => { exitSession(); go('learn'); },
     'answer': el => answerQuiz(Number(el.dataset.index)),
     'continue': () => continueSession(),
     'flip': () => flipCard(),
@@ -1751,7 +1987,7 @@ const actions = {
     'restart': () => {
         const s = app.session;
         if (s.drill) startDrill(s.drill);
-        else startSession({ topics: s.topics, items: s.items, mode: s.mode, reverse: s.reverse });
+        else startSession({ topics: s.topics, items: s.items, mode: s.mode, reverse: s.reverse, lesson: s.lesson });
     }
 };
 
@@ -1861,6 +2097,12 @@ function bindEvents() {
 
         if (s.done) {
             if (e.key === 'Enter' && e.target === document.body) actions.restart();
+            return;
+        }
+        if (s.mode === 'teach') {
+            const dir = { 'Enter': 1, ' ': 1, 'ArrowRight': 1, 'ArrowLeft': -1 }[e.key];
+            if (dir) { e.preventDefault(); teachStep(dir); }
+            else if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) actions['replay-audio']();
             return;
         }
         if (s.awaitingContinue && (e.key === 'Enter' || (e.key === ' ' && !inField))) {
