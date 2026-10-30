@@ -63,11 +63,13 @@ const SKILLS = { reading: 'Reading', recall: 'Recall', listening: 'Listening', s
 const KIND_SKILL = { choice: 'reading', reverse: 'recall', listen: 'listening', speak: 'speaking', write: 'writing', typeko: 'typing', build: 'reading', order: 'grammar', particle: 'grammar', reply: 'grammar' };
 const MAX_FREEZES = 2;
 const LENGTHS = [10, 15, 25, 0];
-const VIEWS = ['home', 'learn', 'practice', 'numbers', 'words', 'settings'];
+const VIEWS = ['home', 'learn', 'practice', 'progress', 'numbers', 'words', 'settings'];
 const PASS_PCT = 60;
 
 const defaults = () => ({
     version: 6,
+    name: '',
+    onboarded: false,
     mastery: {},
     srs: {},
     history: {},
@@ -105,6 +107,7 @@ const app = {
     words: { topic: 'all', status: 'all', query: '' },
     builder: { c: 'ㅎ', v: 'ㅏ', f: 'ㄴ' },
     learnTab: 'course',
+    welcomeStep: 1,
     notesQuery: ''
 };
 
@@ -619,7 +622,7 @@ function renderView() {
         a.classList.toggle('is-active', on);
         if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
     });
-    ({ home: renderHome, learn: renderLearn, practice: renderPractice, numbers: renderNumbers, words: renderWords, settings: renderSettings })[app.view]();
+    ({ home: renderHome, learn: renderLearn, practice: renderPractice, progress: renderProgress, numbers: renderNumbers, words: renderWords, settings: renderSettings })[app.view]();
     renderHeaderStats();
 }
 
@@ -631,7 +634,6 @@ function go(view) {
 
 function renderHeaderStats() {
     $('#hdr-streak').textContent = app.store.streak || 0;
-    $('#hdr-level').textContent = app.store.level || 1;
 }
 
 /* ------------------------------------------------------------------ */
@@ -654,92 +656,154 @@ function progressRing(value, max, size = 120) {
 
 const bar = pct => `<div class="bar"><span style="width:${pct}%"></span></div>`;
 
-function topicCard(t) {
-    const st = statsFor(t.items);
-    const sample = t.items.slice(0, 3).map(i => i.key).join(' ');
-    const empty = t.items.length === 0;
-    return `<article class="topic-card">
-        <div class="topic-head">
-            <div>
-                <h4>${esc(t.label)}</h4>
-                ${t.sub ? `<p>${esc(t.sub)}</p>` : ''}
+/* First visit: ask for a name, then where to start. */
+function renderWelcome() {
+    const s = app.store;
+    document.body.classList.add('is-welcome');
+    const step = app.welcomeStep || 1;
+    const name = s.name;
+    $('#view-home').innerHTML = step === 1 ? `
+        <section class="welcome">
+            <div class="welcome-mark"><img src="assets/logo.png" alt=""></div>
+            <p class="welcome-hello lang-text">안녕하세요!</p>
+            <h1>Welcome to LingaloKR</h1>
+            <p class="lead">Learn to read, speak and understand Korean, a few minutes a day.</p>
+            <form class="welcome-form" data-form="welcome-name" autocomplete="on">
+                <label for="welcome-name">What should we call you?</label>
+                <input id="welcome-name" name="given-name" autocomplete="given-name" maxlength="30" placeholder="Your name" value="${esc(name)}" required>
+                <button type="submit" class="btn btn-primary btn-lg btn-block">Continue ${icon('arrow-right', 'icon-sm')}</button>
+            </form>
+            <button type="button" class="link-btn welcome-skip" data-action="welcome-skip">Skip for now</button>
+        </section>` : `
+        <section class="welcome">
+            <h1>${name ? `Nice to meet you, ${esc(name)}!` : 'Nice to meet you!'}</h1>
+            <p class="lead">Where would you like to start?</p>
+            <div class="start-choices">
+                <button type="button" class="start-choice" data-action="welcome-start" data-start="new">
+                    <span class="mode-icon">${icon('learn')}</span>
+                    <span><strong>I'm completely new</strong><small>Start with the Korean alphabet. Lesson 1 takes about 5 minutes.</small></span>
+                    ${icon('arrow-right', 'icon-sm')}
+                </button>
+                <button type="button" class="start-choice" data-action="welcome-start" data-start="test">
+                    <span class="mode-icon">${icon('target')}</span>
+                    <span><strong>I can already read Hangul</strong><small>Take a 15-question test and skip ahead if you pass.</small></span>
+                    ${icon('arrow-right', 'icon-sm')}
+                </button>
+                <button type="button" class="start-choice" data-action="welcome-start" data-start="look">
+                    <span class="mode-icon">${icon('home')}</span>
+                    <span><strong>Just look around</strong><small>Go to your home screen. You can start a lesson any time.</small></span>
+                    ${icon('arrow-right', 'icon-sm')}
+                </button>
             </div>
-            <span class="count-pill">${t.items.length}</span>
-        </div>
-        ${empty ? '<div class="topic-sample muted">No words yet</div>' : `<div class="topic-sample lang-text">${esc(sample)}</div>`}
-        ${bar(st.pct)}
-        <div class="topic-foot">
-            <span class="muted small">${st.due ? `<strong class="due-text">${st.due} due</strong> · ` : ''}${st.pct}% mastered</span>
-            <div class="topic-actions">
-                ${empty
-                    ? `<button type="button" class="btn btn-sm btn-secondary" data-action="browse-topic" data-topic="${t.id}">${icon('plus', 'icon-sm')}Add words</button>`
-                    : `<button type="button" class="btn btn-sm btn-ghost" data-action="browse-topic" data-topic="${t.id}">View</button>
-                       <button type="button" class="btn btn-sm btn-primary" data-action="start-topic" data-topic="${t.id}">${icon('play', 'icon-sm')}Practice</button>`}
-            </div>
-        </div>
-    </article>`;
+        </section>`;
+    if (step === 1) setTimeout(() => { const el = $('#welcome-name'); if (el) el.focus(); }, 50);
+}
+
+const hasProgress = () => Object.keys(app.store.guided).length > 0 || Object.keys(app.store.history).length > 0;
+
+function welcomeNext(name) {
+    app.store.name = name;
+    save();
+    if (hasProgress()) { finishWelcome('look'); return; }
+    app.welcomeStep = 2;
+    renderWelcome();
+}
+
+function finishWelcome(start) {
+    app.store.onboarded = true;
+    save();
+    document.body.classList.remove('is-welcome');
+    if (start === 'new') startLesson(LESSONS[0].id, 'lesson');
+    else if (start === 'test') actions['start-test']({ dataset: { unit: 'Read Hangul' } });
+    renderView();
 }
 
 function renderHome() {
     const s = app.store;
-    const topics = getTopics();
-    const items = allItems();
-    const st = statsFor(items);
-    const t = dayNum();
-    const dueTomorrow = items.filter(i => { const c = deck()[i.id]; return c && c.due === t + 1; }).length;
-    const sel = selectedTopicIds();
-    const selPool = poolFor(sel);
-    const newInSel = selPool.filter(isNew).length;
-    const selLabels = topics.filter(x => sel.includes(x.id)).map(x => x.label);
-    const mode = MODES[s.prefs.mode];
-    const xpNeeded = s.level * 100;
-    const goalLeft = Math.max(0, s.dailyGoal - s.todayXP);
-    const groups = [...new Set(topics.map(x => x.group))];
+    if (!s.onboarded) { renderWelcome(); return; }
+    document.body.classList.remove('is-welcome');
 
-    const primary = st.due
-        ? `<button type="button" class="btn btn-primary btn-lg" data-action="review-due">${icon('rotate')}Review ${plural(st.due, 'due word')}</button>
-           <button type="button" class="btn btn-secondary btn-lg" data-action="quick-start">${icon(mode.icon)}Start ${esc(mode.label.toLowerCase())}</button>`
-        : `<button type="button" class="btn btn-primary btn-lg" data-action="quick-start">${icon(mode.icon)}Start ${esc(mode.label.toLowerCase())}</button>
-           <button type="button" class="btn btn-secondary btn-lg" data-action="learn-new" ${newInSel ? '' : 'disabled'}>${icon('plus')}${newInSel ? `Learn ${Math.min(newInSel, s.prefs.length || newInSel)} new words` : 'No new words here'}</button>`;
+    const steps = planSteps();
+    const next = steps.find(st => !st.done);
+    const left = steps.filter(st => !st.done).length;
+    const started = Object.values(planState()).some(Boolean);
+    const st = statsFor(allItems());
+    const course = courseLessons();
+    const doneLessons = course.filter(l => lessonDone(l.id)).length;
+    const nl = nextLesson();
+    const earned = ACHIEVEMENTS.filter(a => s.achievements[a.id]).length;
+    const goalLeft = Math.max(0, s.dailyGoal - s.todayXP);
 
     $('#view-home').innerHTML = `
-        <section class="hero">
-            <div class="hero-main">
-                <div class="eyebrow"><span class="lang-badge lang-badge-sm">한</span><span>한국어 · Korean</span></div>
-                <h1>${greeting()}.</h1>
-                <p class="lead">${st.due ? `You have ${plural(st.due, 'word')} ready for review.` : st.seen ? `Nothing due right now.${dueTomorrow ? ` ${plural(dueTomorrow, 'word')} come back tomorrow.` : ''}` : 'Start with Hangul, numbers, or everyday words.'}</p>
-                <div class="hero-actions">${primary}</div>
-                <p class="hero-note">${esc(selLabels.length > 2 ? `${selLabels.length} topics` : selLabels.join(' + '))} · ${plural(selPool.length, 'word')} · <a href="#/practice">Change</a></p>
+        <section class="home-hero">
+            <div class="home-main">
+                <h1>${greeting()}${s.name ? `, ${esc(s.name)}` : ''}.</h1>
+                <p class="lead">${next ? `Here's your plan for today: about ${left * 5} minutes.` : steps.length ? "You've finished today's plan. 수고했어요!" : 'Nothing scheduled right now. Practice anything you like.'}</p>
+                <ol class="plan-steps" aria-label="Today's plan">${steps.map(x => `
+                    <li class="${x.done ? 'is-done' : ''} ${x === next ? 'is-current' : ''}">
+                        <span class="plan-check">${x.done ? icon('check', 'icon-sm') : icon(x.icon, 'icon-sm')}</span>
+                        <span><strong>${esc(x.label)}</strong><small>${x.done ? 'Done' : esc(x.sub)}</small></span>
+                    </li>`).join('')}
+                </ol>
+                <div class="hero-actions">
+                    ${next
+                        ? `<button type="button" class="btn btn-primary btn-lg" data-action="plan-start">${icon('play')}${started ? 'Continue' : 'Start'}</button>`
+                        : `<a class="btn btn-primary btn-lg" href="#/practice">${icon('zap')}Practice more</a>`}
+                </div>
             </div>
-            <div class="hero-goal">
+            <aside class="home-side" aria-label="Today">
                 <div class="ring-wrap">
                     ${progressRing(s.todayXP, s.dailyGoal)}
                     <div class="ring-label"><strong>${s.todayXP}</strong><span>/ ${s.dailyGoal} XP</span></div>
                 </div>
                 <div class="goal-text">
-                    <strong>Daily goal</strong>
-                    <span>${goalLeft ? `${goalLeft} XP to go today` : 'Done for today. Great job!'}</span>
+                    <strong>${goalLeft ? 'Daily goal' : 'Goal reached!'}</strong>
+                    <span>${goalLeft ? `${goalLeft} XP to go` : 'Great job today'}</span>
                 </div>
-            </div>
+                <div class="home-streak">${icon('flame', 'icon-sm')}<strong>${plural(s.streak || 0, 'day')}</strong> streak${s.freezes ? ` · ${icon('shield', 'icon-sm')}${s.freezes} ${s.freezes === 1 ? 'freeze' : 'freezes'}` : ''}</div>
+            </aside>
         </section>
 
-        ${planPanel()}
+        <section class="home-cards" aria-label="Shortcuts">
+            <a class="home-card" href="#/learn">
+                <span class="mode-icon">${icon('learn')}</span>
+                <span class="home-card-body">
+                    <strong>Course</strong>
+                    <small>${nl ? `Next: ${esc(nl.title)}` : 'Every lesson done!'}</small>
+                    ${bar(Math.round(doneLessons / course.length * 100))}
+                    <small>${doneLessons} of ${course.length} lessons</small>
+                </span>
+            </a>
+            <a class="home-card" href="#/words">
+                <span class="mode-icon">${icon('book')}</span>
+                <span class="home-card-body">
+                    <strong>Words</strong>
+                    <small>${st.seen ? `${st.mastered} mastered${st.due ? ` · ${st.due} due` : ''}` : 'Browse every word and add your own'}</small>
+                </span>
+            </a>
+            <a class="home-card" href="#/progress">
+                <span class="mode-icon">${icon('trophy')}</span>
+                <span class="home-card-body">
+                    <strong>Progress</strong>
+                    <small>Level ${s.level} · ${earned} of ${ACHIEVEMENTS.length} achievements</small>
+                </span>
+            </a>
+        </section>`;
+}
 
+function renderProgress() {
+    const s = app.store;
+    const st = statsFor(allItems());
+    const xpNeeded = s.level * 100;
+    $('#view-progress').innerHTML = `
+        <header class="page-head">
+            <h1>Progress</h1>
+            <p class="lead">Your streak, level, skills and achievements.</p>
+        </header>
         <section class="stat-grid">
-            <div class="stat">
-                <span class="stat-label">Due today</span>
-                <span class="stat-value ${st.due ? 'warn' : ''}">${st.due}</span>
-                <span class="muted small">${dueTomorrow ? `${dueTomorrow} more tomorrow` : 'Spaced review keeps words fresh'}</span>
-            </div>
-            <div class="stat">
-                <span class="stat-label">Mastered</span>
-                <span class="stat-value">${st.mastered}<small> / ${st.total}</small></span>
-                ${bar(st.pct)}
-            </div>
             <div class="stat">
                 <span class="stat-label">Streak</span>
                 <span class="stat-value">${s.streak || 0}<small> ${s.streak === 1 ? 'day' : 'days'}</small></span>
-                <span class="muted small">${s.lastStreakUpdate === new Date().toDateString() ? 'You practiced today' : 'Practice today to keep it going'}</span>
                 <span class="muted small freeze-note" title="A freeze covers one missed day. Earn one every 7 days of streak (up to ${MAX_FREEZES}).">${icon('shield', 'icon-sm')}${plural(s.freezes || 0, 'streak freeze')}</span>
             </div>
             <div class="stat">
@@ -747,25 +811,20 @@ function renderHome() {
                 <span class="stat-value">${s.totalXP}<small> / ${xpNeeded} XP</small></span>
                 ${bar(Math.round(s.totalXP / xpNeeded * 100))}
             </div>
+            <div class="stat">
+                <span class="stat-label">Mastered</span>
+                <span class="stat-value">${st.mastered}<small> / ${st.total}</small></span>
+                ${bar(st.pct)}
+            </div>
+            <div class="stat">
+                <span class="stat-label">Due today</span>
+                <span class="stat-value ${st.due ? 'warn' : ''}">${st.due}</span>
+                <span class="muted small">Spaced review keeps words fresh</span>
+            </div>
         </section>
-
         ${renderActivity()}
         ${progressPanel()}
-        ${achievementsPanel()}
-
-        <section class="section">
-            <div class="section-head">
-                <h2>Topics</h2>
-                <a class="link" href="#/words">Browse all words ${icon('arrow-right', 'icon-sm')}</a>
-            </div>
-            ${groups.map(g => `
-                <div class="group-row">
-                    <h3 class="group-title">${esc(g)}</h3>
-                    ${g === 'Numbers' ? `<a class="link small" href="#/numbers">Number drills ${icon('arrow-right', 'icon-sm')}</a>` : ''}
-                </div>
-                <div class="topic-grid">${topics.filter(x => x.group === g).map(topicCard).join('')}</div>
-            `).join('')}
-        </section>`;
+        ${achievementsPanel()}`;
 }
 
 /* Activity: XP per day for the last 14 days, plus a 15-week practice calendar. */
@@ -851,17 +910,21 @@ function renderActivity() {
 /* ------------------------------------------------------------------ */
 /* Learn (guided path)                                                 */
 /* ------------------------------------------------------------------ */
+// One tappable row per lesson: the whole row opens it.
 function lessonRow(lesson, n, upNext) {
     const rec = app.store.guided[lesson.id];
     const state = rec ? 'is-done' : upNext ? 'is-next' : '';
-    return `<li class="lesson ${state}">
-        <span class="lesson-num">${rec ? icon('check', 'icon-sm') : n}</span>
-        <div class="lesson-body">
-            <strong>${esc(lesson.title)}</strong>
-            <span class="lesson-desc lang-text">${esc(lesson.desc)}</span>
-            <span class="muted small">${plural(lessonItems(lesson).length, lessonNoun(lesson))}${rec ? (rec.tested ? ' · passed by test' : ` · best ${rec.best}%`) : ''}</span>
-        </div>
-        <button type="button" class="btn btn-sm ${upNext ? 'btn-primary' : 'btn-secondary'}" data-action="start-lesson" data-lesson="${lesson.id}">${upNext ? `${icon('play', 'icon-sm')}Start` : rec ? 'Review' : 'Open'}</button>
+    const meta = `${plural(lessonItems(lesson).length, lessonNoun(lesson))}${rec ? (rec.tested ? ' · passed by test' : ` · best ${rec.best}%`) : ''}`;
+    return `<li>
+        <button type="button" class="lesson ${state}" data-action="start-lesson" data-lesson="${lesson.id}">
+            <span class="lesson-num" aria-hidden="true">${rec ? icon('check', 'icon-sm') : n}</span>
+            <span class="lesson-body">
+                <strong>${esc(lesson.title)}${rec ? '<span class="sr-only"> (done)</span>' : ''}</strong>
+                <span class="lesson-desc lang-text">${esc(lesson.desc)}</span>
+                <span class="muted small">${meta}</span>
+            </span>
+            <span class="lesson-go">${upNext ? 'Start' : rec ? 'Review' : ''}${icon('arrow-right', 'icon-sm')}</span>
+        </button>
     </li>`;
 }
 
@@ -874,23 +937,31 @@ function letterTile(item) {
     </button>`;
 }
 
+// A unit is a collapsible list; only the unit you're working on starts open.
 function unitSection(u, ui, next) {
     const ls = unitLessons(u.name);
     const udone = ls.filter(l => lessonDone(l.id)).length;
     const test = app.store.unitTests[u.name];
-    const testRow = u.optional ? '' : `<li class="lesson lesson-test ${test ? 'is-done' : ''}">
-        <span class="lesson-num">${test ? icon('check', 'icon-sm') : icon('target', 'icon-sm')}</span>
-        <div class="lesson-body">
-            <strong>Unit test</strong>
-            <span class="muted small">15 questions across the unit · pass ${UNIT_PASS_PCT}% to complete every lesson in it${test ? ` · best ${test.best}%` : ''}</span>
-        </div>
-        <button type="button" class="btn btn-sm btn-secondary" data-action="start-test" data-unit="${esc(u.name)}">${test ? 'Retake' : 'Take test'}</button>
+    const open = !u.optional && (next ? ls.includes(next) : ui === 0);
+    const testRow = u.optional ? '' : `<li>
+        <button type="button" class="lesson lesson-test ${test ? 'is-done' : ''}" data-action="start-test" data-unit="${esc(u.name)}">
+            <span class="lesson-num" aria-hidden="true">${test ? icon('check', 'icon-sm') : icon('target', 'icon-sm')}</span>
+            <span class="lesson-body">
+                <strong>Unit test</strong>
+                <span class="muted small">15 questions · pass ${UNIT_PASS_PCT}% to complete the whole unit${test ? ` · best ${test.best}%` : ''}</span>
+            </span>
+            <span class="lesson-go">${test ? 'Retake' : 'Take test'}${icon('arrow-right', 'icon-sm')}</span>
+        </button>
     </li>`;
-    return `<section class="section">
-        <div class="section-head"><h2><span class="step">${u.optional ? icon('book', 'icon-sm') : ui + 1}</span>${esc(u.name)}</h2><span class="muted small">${udone} / ${ls.length}</span></div>
-        <p class="muted small unit-desc">${esc(u.desc)}</p>
+    return `<details class="unit" ${open ? 'open' : ''}>
+        <summary class="unit-head">
+            <span class="step" aria-hidden="true">${u.optional ? icon('book', 'icon-sm') : udone === ls.length ? icon('check', 'icon-sm') : ui + 1}</span>
+            <span class="unit-title"><strong>${esc(u.name)}</strong><small>${esc(u.desc)}</small></span>
+            <span class="muted small unit-count">${udone} / ${ls.length}</span>
+            ${icon('chevron-down', 'icon-sm summary-chevron')}
+        </summary>
         <ol class="lesson-list">${ls.map(l => lessonRow(l, lessonNumber(l), next === l)).join('')}${testRow}</ol>
-    </section>`;
+    </details>`;
 }
 
 function renderLearn() {
@@ -988,6 +1059,9 @@ function renderBuilder() {
 /* ------------------------------------------------------------------ */
 /* Practice setup                                                      */
 /* ------------------------------------------------------------------ */
+// Modes shown up front on Practice; the rest sit under "More ways to practice".
+const MAIN_MODES = ['quiz', 'flashcards', 'listening', 'speaking'];
+
 function renderPractice() {
     const p = app.store.prefs;
     const topics = getTopics();
@@ -1004,23 +1078,42 @@ function renderPractice() {
             <span><strong>${title}</strong><small>${desc}</small></span>
             <input type="checkbox" class="switch" data-pref="${key}" ${p[key] ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
         </label>`;
+    const modeCard = ([id, m]) => {
+        const off = id === 'speaking' && !Speaking.supported;
+        return `<button type="button" class="mode-card ${p.mode === id ? 'is-on' : ''}" role="radio" aria-checked="${p.mode === id}" data-action="set-mode" data-mode="${id}" ${off ? 'disabled' : ''}>
+            <span class="mode-icon">${icon(m.icon)}</span>
+            <strong>${m.label}</strong>
+            <small>${off ? 'Needs Chrome, Edge or Safari' : m.desc}</small>
+        </button>`;
+    };
+    const modes = Object.entries(MODES);
+    const more = modes.filter(([id]) => !MAIN_MODES.includes(id));
+    const optionSummary = [p.length ? `${p.length} questions` : 'All words', p.reverse && !noReverse ? 'English → Korean' : '', p.hints ? 'hints on' : 'hints off'].filter(Boolean).join(' · ');
 
     $('#view-practice').innerHTML = `
         <header class="page-head">
             <h1>Practice</h1>
-            <p class="lead">Choose what to study and how. Words due for review always come first.</p>
+            <p class="lead">Pick topics and a way to practice. Words due for review always come first.</p>
         </header>
+
+        <a class="inline-card" href="#/numbers">
+            <span class="mode-icon">${icon('hash')}</span>
+            <span><strong>Numbers</strong><small>Both number systems, plus drills for prices, time and dates</small></span>
+            ${icon('arrow-right', 'icon-sm')}
+        </a>
 
         <section class="panel">
             <div class="panel-head"><span class="step">1</span><h2>What to study</h2></div>
             ${groups.map(g => {
                 const gt = topics.filter(t => t.group === g);
+                const on = gt.filter(t => sel.has(t.id)).length;
                 const allOn = gt.every(t => sel.has(t.id) || !t.items.length);
-                return `<div class="topic-group">
-                    <div class="topic-group-head">
-                        <h3>${esc(g)}</h3>
-                        ${gt.length > 1 ? `<button type="button" class="link-btn" data-action="toggle-group" data-group="${esc(g)}" data-on="${allOn ? 0 : 1}">${allOn ? 'Clear' : 'Select all'}</button>` : ''}
-                    </div>
+                return `<details class="topic-group" ${on ? 'open' : ''}>
+                    <summary>
+                        <span class="topic-group-title">${esc(g)}</span>
+                        <span class="muted small">${on ? `${on} selected` : plural(gt.length, 'topic')}</span>
+                        ${icon('chevron-down', 'icon-sm summary-chevron')}
+                    </summary>
                     <div class="check-chips">
                         ${gt.map(t => `<button type="button" class="check-chip ${sel.has(t.id) ? 'is-on' : ''}" data-action="toggle-topic" data-topic="${t.id}" aria-pressed="${sel.has(t.id)}" ${t.items.length ? '' : 'disabled'} ${t.sub ? `title="${esc(t.sub)}"` : ''}>
                             <span class="check-box">${icon('check', 'icon-xs')}</span>
@@ -1028,27 +1121,26 @@ function renderPractice() {
                             <span class="chip-count">${t.items.length}</span>
                         </button>`).join('')}
                     </div>
-                </div>`;
+                    ${gt.length > 2 ? `<button type="button" class="link-btn group-toggle" data-action="toggle-group" data-group="${esc(g)}" data-on="${allOn ? 0 : 1}">${allOn ? 'Clear these' : 'Select all'}</button>` : ''}
+                </details>`;
             }).join('')}
         </section>
 
         <section class="panel">
-            <div class="panel-head"><span class="step">2</span><h2>How to study</h2></div>
-            <div class="mode-grid" role="radiogroup" aria-label="Practice mode">
-                ${Object.entries(MODES).map(([id, m]) => {
-                    const off = id === 'speaking' && !Speaking.supported;
-                    return `
-                    <button type="button" class="mode-card ${p.mode === id ? 'is-on' : ''}" role="radio" aria-checked="${p.mode === id}" data-action="set-mode" data-mode="${id}" ${off ? 'disabled' : ''}>
-                        <span class="mode-icon">${icon(m.icon)}</span>
-                        <strong>${m.label}</strong>
-                        <small>${off ? 'Needs Chrome, Edge or Safari' : m.desc}</small>
-                    </button>`;
-                }).join('')}
-            </div>
+            <div class="panel-head"><span class="step">2</span><h2>How to practice</h2></div>
+            <div class="mode-grid" role="radiogroup" aria-label="Practice mode">${modes.filter(([id]) => MAIN_MODES.includes(id)).map(modeCard).join('')}</div>
+            <details class="more-modes" ${MAIN_MODES.includes(p.mode) ? '' : 'open'}>
+                <summary>More ways to practice (${more.length}) ${icon('chevron-down', 'icon-sm summary-chevron')}</summary>
+                <div class="mode-grid" role="radiogroup" aria-label="More practice modes">${more.map(modeCard).join('')}</div>
+            </details>
         </section>
 
-        <section class="panel">
-            <div class="panel-head"><span class="step">3</span><h2>Options</h2></div>
+        <details class="panel options-panel">
+            <summary>
+                <h2>Options</h2>
+                <span class="muted small">${esc(optionSummary)}</span>
+                ${icon('chevron-down', 'icon-sm summary-chevron')}
+            </summary>
             <div class="options-grid">
                 ${toggle('reverse', 'English → Korean', noReverse ? 'Not used in this mode' : 'Show the English, answer in Korean', noReverse)}
                 ${toggle('teach', 'Repeat mistakes', 'Missed words come back later in the session')}
@@ -1060,7 +1152,7 @@ function renderPractice() {
                     </div>
                 </div>
             </div>
-        </section>
+        </details>
 
         <div class="start-bar">
             <div>
@@ -1344,6 +1436,14 @@ function renderSettings() {
             <p class="lead">Your progress is saved in this browser.</p>
         </header>
         <div class="settings">
+            <section class="panel">
+                <div class="panel-head"><h2>Profile</h2></div>
+                <div class="setting-row">
+                    <label for="profile-name"><strong>Your name</strong><small>Used to greet you on Home</small></label>
+                    <input id="profile-name" class="text-input" maxlength="30" autocomplete="given-name" placeholder="Your name" value="${esc(s.name)}">
+                </div>
+            </section>
+
             <section class="panel">
                 <div class="panel-head"><h2>Appearance</h2></div>
                 <div class="setting-row">
@@ -2428,6 +2528,8 @@ const actions = {
     'start-test': el => startSession({ items: lessonItems(lessonById(`test:${el.dataset.unit}`)), mode: 'lesson', reverse: false, lesson: `test:${el.dataset.unit}` }),
     'skip-exercise': () => { const s = app.session; if (s && !s.locked) { Speaking.stop(); advance(); } },
     'plan-start': () => { const step = planSteps().find(st => !st.done); if (step) step.run(); else toast("That's today's plan done!", 'success'); },
+    'welcome-skip': () => welcomeNext(''),
+    'welcome-start': el => finishWelcome(el.dataset.start),
     'learn-tab': el => { app.learnTab = el.dataset.tab; renderLearn(); },
     'trace-group': el => startSession({ topics: [el.dataset.topic], mode: 'writing' }),
     'teach-next': () => teachStep(1),
@@ -2518,6 +2620,7 @@ function bindEvents() {
         if (!form) return;
         e.preventDefault();
         if (form.dataset.form === 'typing') checkTyped($('#type-input').value);
+        if (form.dataset.form === 'welcome-name') welcomeNext($('#welcome-name').value.trim().slice(0, 30));
         if (form.dataset.form === 'add-words') {
             const input = $('#add-words-input');
             if (input.value.trim()) addCustomWords(input.value).then(() => { const i = $('#add-words-input'); if (i) i.value = ''; });
@@ -2545,6 +2648,7 @@ function bindEvents() {
     document.addEventListener('change', e => {
         const t = e.target;
         if (t.id === 'words-topic') { app.words.topic = t.value; renderWordResults(); }
+        if (t.id === 'profile-name') { app.store.name = t.value.trim().slice(0, 30); save(); toast(app.store.name ? `We'll call you ${app.store.name}.` : 'Name cleared.', 'success'); }
         if (t.dataset.pref) { app.store.prefs[t.dataset.pref] = t.checked; save(); }
         if (t.dataset.setting) { app.store[t.dataset.setting] = t.checked; save(); }
         if (t.id === 'import-file' && t.files[0]) { importProgress(t.files[0]); t.value = ''; }

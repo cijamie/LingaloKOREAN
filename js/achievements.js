@@ -85,43 +85,21 @@ function planSteps() {
     const due = allItems().filter(i => isDue(i));
     const next = nextLesson() || nextClassLesson();
     const drill = todaysDrill();
+    // Steps with nothing to do today (no reviews due yet, no drill before the first lesson) are left out.
     return [
         {
-            id: 'review', icon: 'rotate', label: due.length ? `Review ${plural(due.length, 'due word')}` : 'Review', sub: due.length ? 'Words you are about to forget' : 'Nothing due right now',
-            done: !!done.review || !due.length, run: () => startSession({ items: due, mode: sessionMode(), plan: 'review' })
+            id: 'review', icon: 'rotate', label: due.length ? `Review ${plural(due.length, 'due word')}` : 'Review', sub: 'Words you are about to forget',
+            done: !!done.review || !due.length, show: !!done.review || due.length > 0, run: () => startSession({ items: due, mode: sessionMode(), plan: 'review' })
         },
         {
-            id: 'lesson', icon: 'learn', label: next ? `Lesson: ${next.title}` : 'Lesson', sub: next ? next.unit : 'Every lesson is done',
-            done: !!done.lesson || !next, run: () => startLesson(next.id, 'lesson')
+            id: 'lesson', icon: 'learn', label: done.lesson ? "Today's lesson" : next ? `Lesson: ${next.title}` : 'Lesson', sub: next ? next.unit : '',
+            done: !!done.lesson || !next, show: !!done.lesson || !!next, run: () => startLesson(next.id, 'lesson')
         },
         {
-            id: 'drill', icon: drill ? MODES[drill.mode].icon : 'zap', label: drill ? drill.label : 'Skill drill', sub: drill ? drill.sub : 'Unlocks after your first lesson',
-            done: !!done.drill || !drill, run: () => startSession({ items: drill.items, mode: drill.mode, plan: 'drill' })
+            id: 'drill', icon: drill ? MODES[drill.mode].icon : 'zap', label: drill ? drill.label : 'Skill drill', sub: drill ? drill.sub : '',
+            done: !!done.drill || !drill, show: !!done.drill || !!drill, run: () => startSession({ items: drill.items, mode: drill.mode, plan: 'drill' })
         }
-    ];
-}
-
-function planPanel() {
-    const steps = planSteps();
-    const left = steps.filter(st => !st.done).length;
-    const course = courseLessons();
-    const doneLessons = course.filter(l => lessonDone(l.id)).length;
-    return `<section class="panel plan">
-        <div class="plan-head">
-            <div>
-                <strong>Today's plan</strong>
-                <span class="muted small">${left ? `${plural(left, 'step')} left · about ${left * 5} minutes` : 'All done for today. 수고했어요!'}</span>
-            </div>
-            ${left ? `<button type="button" class="btn btn-primary" data-action="plan-start">${icon('play', 'icon-sm')}${Object.values(planState()).some(Boolean) ? 'Continue' : 'Start'}</button>` : ''}
-        </div>
-        <ol class="plan-steps">${steps.map(st => `
-            <li class="${st.done ? 'is-done' : ''}">
-                <span class="plan-check">${st.done ? icon('check', 'icon-sm') : icon(st.icon, 'icon-sm')}</span>
-                <span><strong>${esc(st.label)}</strong><small>${esc(st.sub)}</small></span>
-            </li>`).join('')}
-        </ol>
-        <div class="plan-course"><span class="muted small">Course: ${doneLessons} of ${course.length} lessons</span>${bar(Math.round(doneLessons / course.length * 100))}</div>
-    </section>`;
+    ].filter(st => st.show);
 }
 
 /* ------------------------------------------------------------------ */

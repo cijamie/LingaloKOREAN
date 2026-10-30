@@ -66,6 +66,8 @@
             <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0M12 17v5M8 22h8"/></symbol>
             <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></symbol>
             <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></symbol>
+            <symbol id="i-chevron-right" viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></symbol>
+            <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
             <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></symbol>
         </defs>
     </svg>
@@ -84,18 +86,17 @@
                 <a href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg>Home</a>
                 <a href="#/learn" data-nav="learn"><svg class="icon"><use href="#i-learn"/></svg>Learn</a>
                 <a href="#/practice" data-nav="practice"><svg class="icon"><use href="#i-zap"/></svg>Practice</a>
-                <a href="#/numbers" data-nav="numbers"><svg class="icon"><use href="#i-hash"/></svg>Numbers</a>
+                <a href="#/progress" data-nav="progress"><svg class="icon"><use href="#i-trophy"/></svg>Progress</a>
                 <a href="#/words" data-nav="words"><svg class="icon"><use href="#i-book"/></svg>Words</a>
-                <a href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
             </nav>
 
             <div class="header-right">
-                <div class="chip chip-streak" title="Daily streak">
+                <a class="chip chip-streak" href="#/progress" title="Daily streak" aria-label="Streak: see your progress">
                     <svg class="icon"><use href="#i-flame"/></svg><span id="hdr-streak">0</span>
-                </div>
-                <div class="chip chip-level" title="Level">
-                    <svg class="icon"><use href="#i-star"/></svg><span>Lv <span id="hdr-level">1</span></span>
-                </div>
+                </a>
+                <a class="icon-btn header-settings" href="#/settings" data-nav="settings" aria-label="Settings" title="Settings">
+                    <svg class="icon"><use href="#i-gear"/></svg>
+                </a>
             </div>
         </div>
     </header>
@@ -104,6 +105,7 @@
         <section id="view-home" class="view" hidden></section>
         <section id="view-learn" class="view" hidden></section>
         <section id="view-practice" class="view" hidden></section>
+        <section id="view-progress" class="view" hidden></section>
         <section id="view-numbers" class="view" hidden></section>
         <section id="view-words" class="view" hidden></section>
         <section id="view-settings" class="view" hidden></section>
@@ -114,9 +116,8 @@
         <a href="#/home" data-nav="home"><svg class="icon"><use href="#i-home"/></svg><span>Home</span></a>
         <a href="#/learn" data-nav="learn"><svg class="icon"><use href="#i-learn"/></svg><span>Learn</span></a>
         <a href="#/practice" data-nav="practice"><svg class="icon"><use href="#i-zap"/></svg><span>Practice</span></a>
-        <a href="#/numbers" data-nav="numbers"><svg class="icon"><use href="#i-hash"/></svg><span>Numbers</span></a>
+        <a href="#/progress" data-nav="progress"><svg class="icon"><use href="#i-trophy"/></svg><span>Progress</span></a>
         <a href="#/words" data-nav="words"><svg class="icon"><use href="#i-book"/></svg><span>Words</span></a>
-        <a href="#/settings" data-nav="settings"><svg class="icon"><use href="#i-settings"/></svg><span>Settings</span></a>
     </nav>
 
     <!-- Study session (full screen) -->

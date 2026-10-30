@@ -2,18 +2,20 @@
 
 Learn **Korean**: Hangul, numbers, and everyday words, with spaced repetition so you actually remember them.
 
-**Live demo: [[https://cijamie.github.io/lingalo/](https://cijamie.github.io/lingalo/)](https://ijme.tk/LingaloKOREAN/)**
+**Live site: [https://ijme.tk/LingaloKOREAN/](https://ijme.tk/LingaloKOREAN/#/home)**
 
 ## Screens
 
 | Screen | What it's for |
 | --- | --- |
-| **Home** | **Today's plan** (review what's due, one lesson, one skill drill), your daily goal, streak and streak freezes, level, an activity chart and practice calendar, a progress panel (course, skills, words), achievements, and every topic with a one-tap **Practice** button. |
+| **Welcome** | First visit only: asks what to call you, then where to start (brand new, already reads Hangul, or just look around). |
+| **Home** | A greeting by name, today's plan (due reviews, the next lesson, a skill drill) with one **Start** button, the daily goal and streak, and shortcuts to the course, words and progress. |
 | **Learn** | **Course:** 41 lessons in four units (Read Hangul, First words, Sentences, Conversations), each ending in a unit test, plus an optional **Your class** track covering the class word list ten words at a time. Lessons open with explanation cards (block diagrams, tables, dialogues), teach each item, then mix exercises. Score 60% to finish a lesson; pass a unit test (80%) to complete the whole unit, so you can test out of Hangul. **Grammar notes:** every explanation card, searchable. **Hangul tools:** a block builder and a chart with a mnemonic for every letter. |
-| **Practice** | Pick topics, a study mode, and options. Words due for review always come first. |
-| **Numbers** | Sino-Korean vs. native numbers, a number reader (type any number to hear it in Korean), and drills for prices, time, counting, age, and dates. |
+| **Practice** | Pick topics (grouped and collapsible) and a way to practice. The four main modes are up front; the rest and the options are tucked away. Links to number drills. |
+| **Progress** | Streak and freezes, level, words mastered, activity chart and calendar, course and skill progress, and achievements. |
+| **Numbers** | Reached from Practice. Sino-Korean vs. native numbers, a number reader (type any number to hear it in Korean), and drills for prices, time, counting, age, and dates. |
 | **Words** | Browse and search every word with example sentences. Filter by new, due, or mastered. Add your own words here. |
-| **Settings** | Theme, sound, speech speed, which exercises appear in lessons (speaking, writing, Hangul typing), daily goal, transfer code, backup, and reset. |
+| **Settings** | The gear in the header. Your name, theme, sound, speech speed, which exercises appear in lessons, daily goal, transfer code, backup, and reset. |
 
 ## Content
 
