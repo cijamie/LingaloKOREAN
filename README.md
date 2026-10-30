@@ -2,7 +2,7 @@
 
 Learn **Korean**: Hangul, numbers, and everyday words, with spaced repetition so you actually remember them.
 
-**Live demo: [https://cijamie.github.io/lingalo/](https://cijamie.github.io/lingalo/)**
+**Live demo: [[https://cijamie.github.io/lingalo/](https://cijamie.github.io/lingalo/)](https://ijme.tk/LingaloKOREAN/)**
 
 ## Screens
 
