@@ -106,7 +106,8 @@ const TOPICS = [
             '사과': ['sagwa', 'Apple'], '우유': ['uyu', 'Milk'], '고기': ['gogi', 'Meat'], '나라': ['nara', 'Country'],
             '도시': ['dosi', 'City'], '아이': ['ai', 'Child'], '오이': ['oi', 'Cucumber'], '모자': ['moja', 'Hat'],
             '학교': ['hakgyo', 'School'], '바다': ['bada', 'Sea'], '하늘': ['haneul', 'Sky'], '물': ['mul', 'Water'],
-            '사랑': ['sarang', 'Love'], '달': ['dal', 'Moon'], '별': ['byeol', 'Star']
+            '사랑': ['sarang', 'Love'], '달': ['dal', 'Moon'], '별': ['byeol', 'Star'], '옷': ['ot', 'Clothes'],
+            '한국어': ['hangugeo', 'Korean (language)'], '음악': ['eumak', 'Music']
         }
     },
     {
@@ -203,6 +204,61 @@ const TOPICS = [
         words: {
             '선생님': ['seonsaengnim', 'Teacher'], '학생': ['haksaeng', 'Student'], '교실': ['gyosil', 'Classroom'], '책': ['chaek', 'Book'],
             '대학교': ['daehakgyo', 'University'], '친구': ['chingu', 'Friend'], '연필': ['yeonpil', 'Pencil']
+        }
+    },
+
+    /* ---- Sentences (used by the guided path; romanization is generated when left blank) ---- */
+    {
+        id: 'sent_basics', group: 'Sentences', label: 'Basic sentences', sub: 'Being, having, particles, places', idPrefix: 'sb',
+        words: {
+            '저': ['jeo', 'I, me (polite)'], '저는': ['', 'I (as the topic)'], '이거': ['igeo', 'This (thing)'], '이름': ['ireum', 'Name'], '날씨': ['nalssi', 'Weather'],
+            '저는 학생이에요': ['', "I'm a student"], '저는 선생님이에요': ['', "I'm a teacher"], '이거 사과예요': ['', 'This is an apple'],
+            '제 이름은 민수예요': ['', 'My name is Minsu'], '저는 미국 사람이에요': ['', "I'm American"],
+            '여기는 학교예요': ['', 'This place is a school'], '친구가 와요': ['', 'A friend is coming'], '날씨가 좋아요': ['', 'The weather is nice'],
+            '커피가 맛있어요': ['', 'The coffee is delicious'],
+            '있어요': ['', 'There is / I have'], '없어요': ['', "There isn't / I don't have"], '시간 있어요?': ['', 'Do you have time?'],
+            '시간이 없어요': ['', "I don't have time"], '물 있어요?': ['', 'Is there any water?'], '동생이 있어요': ['', 'I have a younger sibling'],
+            '밥을 먹어요': ['', "I'm eating a meal"], '커피를 마셔요': ['', "I'm drinking coffee"], '책을 읽어요': ['', "I'm reading a book"],
+            '한국어를 공부해요': ['', "I'm studying Korean"], '영화를 봐요': ['', "I'm watching a movie"], '저는 커피를 좋아해요': ['', 'I like coffee'],
+            '학교에 가요': ['', "I'm going to school"], '집에 있어요': ['', "I'm at home"], '카페에서 공부해요': ['', 'I study at a café'],
+            '식당에서 밥을 먹어요': ['', 'I eat at a restaurant'], '회사에서 일해요': ['', 'I work at a company']
+        }
+    },
+    {
+        id: 'sent_verbs', group: 'Sentences', label: 'Verb forms', sub: 'Present, negative, past, wanting', idPrefix: 'sv',
+        words: {
+            '가요': ['', 'I go'], '와요': ['', 'I come'], '먹어요': ['', 'I eat'], '마셔요': ['', 'I drink'], '봐요': ['', 'I see / watch'],
+            '해요': ['', 'I do'], '자요': ['', 'I sleep'], '공부해요': ['', 'I study'], '좋아해요': ['', 'I like it'],
+            '안 가요': ['', "I don't go"], '안 먹어요': ['', "I don't eat (it)"], '못 가요': ['', "I can't go"], '못 먹어요': ['', "I can't eat (it)"],
+            '공부 안 해요': ['', "I don't study"],
+            '갔어요': ['', 'I went'], '먹었어요': ['', 'I ate'], '봤어요': ['', 'I saw / watched'], '했어요': ['', 'I did'], '마셨어요': ['', 'I drank'],
+            '어제 영화를 봤어요': ['', 'I watched a movie yesterday'], '아침을 먹었어요': ['', 'I ate breakfast'],
+            '가고 싶어요': ['', 'I want to go'], '먹고 싶어요': ['', 'I want to eat'], '자고 싶어요': ['', 'I want to sleep'],
+            '한국에 가고 싶어요': ['', 'I want to go to Korea'], '커피를 마시고 싶어요': ['', 'I want to drink coffee']
+        }
+    },
+    {
+        id: 'sent_questions', group: 'Sentences', label: 'Questions & requests', sub: 'Question words and polite requests', idPrefix: 'sq',
+        words: {
+            '뭐': ['mwo', 'What'], '어디': ['eodi', 'Where'], '누구': ['nugu', 'Who'], '언제': ['eonje', 'When'], '왜': ['wae', 'Why'], '몇': ['myeot', 'How many'],
+            '이름이 뭐예요?': ['', "What's your name?"], '이거 뭐예요?': ['', 'What is this?'], '화장실이 어디예요?': ['', 'Where is the restroom?'],
+            '몇 살이에요?': ['', 'How old are you?'],
+            '물 주세요': ['', 'Water, please'], '메뉴 주세요': ['', 'The menu, please'], '잠깐만 기다려 주세요': ['', 'Please wait a moment'],
+            '여기 앉으세요': ['', 'Please sit here'], '도와주세요': ['', 'Please help me'], '계산해 주세요': ['', 'The bill, please']
+        }
+    },
+    {
+        id: 'sent_talk', group: 'Sentences', label: 'Conversations', sub: 'Key lines from the guided dialogues', idPrefix: 'st',
+        words: {
+            '만나서 반가워요': ['', 'Nice to meet you'], '저는 지나예요': ['', "I'm Jina"], '어느 나라 사람이에요?': ['', 'Where are you from?'],
+            '캐나다 사람이에요': ['', "I'm Canadian"], '한국어 잘하시네요': ['', 'Your Korean is good'], '아직 잘 못해요': ['ajik jal motaeyo', "I'm not good at it yet"],
+            '뭐 드릴까요?': ['', 'What can I get you?'], '아메리카노 한 잔 주세요': ['', 'One americano, please'], '여기서 드세요?': ['', 'For here?'],
+            '가져갈게요': ['', "I'll take it to go"], '카드 돼요?': ['', 'Can I pay by card?'],
+            '저기요': ['', 'Excuse me'], '지하철역이 어디예요?': ['jihacheollyeogi eodiyeyo?', 'Where is the subway station?'], '쭉 가세요': ['', 'Go straight'],
+            '오른쪽으로 가세요': ['', 'Go to the right'], '왼쪽에 있어요': ['', "It's on the left"], '멀어요?': ['', 'Is it far?'],
+            '주말에 뭐 해요?': ['', 'What are you doing this weekend?'], '친구를 만나요': ['', "I'm meeting a friend"],
+            '같이 영화 볼까요?': ['gachi yeonghwa bolkkayo?', 'Shall we watch a movie together?'], '좋아요': ['', 'Sounds good'],
+            '몇 시에 만날까요?': ['', 'What time shall we meet?'], '세 시에 만나요': ['', "Let's meet at three"]
         }
     }
 ];

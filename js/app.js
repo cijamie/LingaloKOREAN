@@ -87,7 +87,8 @@ const app = {
     view: 'home',
     store: defaults(),
     session: null,
-    words: { topic: 'all', status: 'all', query: '' }
+    words: { topic: 'all', status: 'all', query: '' },
+    builder: { c: 'ㅎ', v: 'ㅏ', f: 'ㄴ' }
 };
 
 /* ------------------------------------------------------------------ */
@@ -263,30 +264,43 @@ const poolFor = ids => uniqueItems(ids.map(id => (topicById(id) || { items: [] }
 const exampleFor = item => (item.gen ? null : EXAMPLES[item.id] || (item.id === item.key ? EXAMPLES[item.key] : null));
 
 /* ------------------------------------------------------------------ */
-/* Mnemonics                                                           */
+/* Mnemonics and syllable blocks                                       */
 /* ------------------------------------------------------------------ */
 const mnemonicFor = item => (item && item.isChar ? MNEMONICS[item.key] || null : null);
 
-// "*G*un" → "<strong>G</strong>un", escaped.
-const mnemonicText = text => esc(text).replace(/\*([^*]+)\*/g,'<strong>$1</strong>');
+// "*G*un" → "<strong>G</strong>un", escaped. Used by mnemonics and lesson notes.
+const richText = text => esc(text).replace(/\*([^*]+)\*/g, '<strong>$1</strong>');
 
 function mnemonicLine(item, cls = '') {
     const mn = mnemonicFor(item);
-    return mn ? `<div class="mnemonic ${cls}"><span class="mnemonic-sound">${esc(mn[0])}</span><span>${mnemonicText(mn[1])}</span></div>` : '';
+    return mn ? `<div class="mnemonic ${cls}"><span class="mnemonic-sound">${esc(mn[0])}</span><span>${richText(mn[1])}</span></div>` : '';
 }
 
 // A single letter read aloud gives its name (ㄱ = "giyeok"), so letters are spoken
 // inside a syllable instead: consonants with ㅏ, vowels after a silent ㅇ.
-const JAMO_INITIALS = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
-const JAMO_VOWELS = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
-function sampleSyllable(letter) {
-    const c = JAMO_INITIALS.indexOf(letter);
-    if (c >= 0) return String.fromCharCode(0xac00 + c * 588);
-    const v = JAMO_VOWELS.indexOf(letter);
-    if (v >= 0) return String.fromCharCode(0xac00 + 11 * 588 + v * 28);
-    return letter;
-}
+const sampleSyllable = letter => Hangul.join(letter, 'ㅏ') || Hangul.join('ㅇ', letter) || letter;
 const speakItem = item => speak(item.isChar ? sampleSyllable(item.key) : item.key);
+
+// Where the vowel sits decides the block's shape: right of the consonant, under it, or both.
+const blockShape = vowel => ('ㅏㅐㅑㅒㅓㅔㅕㅖㅣ'.includes(vowel) ? 'side' : 'ㅗㅛㅜㅠㅡ'.includes(vowel) ? 'under' : 'wrap');
+
+// A syllable drawn as its parts in their slots, with "ㄱ + ㅏ + ㅇ = 강" underneath.
+function blockDiagram(syl, { speakable = true } = {}) {
+    const p = Hangul.split(syl);
+    if (!p) return '';
+    const part = (ch, role, label) => `<span class="part part-${role}"><span class="lang-text">${esc(ch)}</span><small>${label}</small></span>`;
+    const sum = [
+        `<span class="tone-c">${esc(p.initial)}</span>${p.initial === 'ㅇ' ? '<small> (silent)</small>' : ''}`,
+        `<span class="tone-v">${esc(p.vowel)}</span>`,
+        p.final ? `<span class="tone-f">${esc(p.final)}</span>` : ''
+    ].filter(Boolean).join(' + ');
+    return `<figure class="block-demo" ${speakable ? `data-action="speak" data-text="${esc(syl)}" role="button" tabindex="0" aria-label="Play ${esc(syl)}"` : ''}>
+        <div class="block block-${blockShape(p.vowel)} ${p.final ? 'has-final' : ''}">
+            ${part(p.initial, 'c', p.initial === 'ㅇ' ? 'silent' : 'consonant')}${part(p.vowel, 'v', 'vowel')}${p.final ? part(p.final, 'f', 'final') : ''}
+        </div>
+        <figcaption><span class="lang-text">${sum} = <strong>${esc(syl)}</strong></span><span class="muted small">${esc(Hangul.romanize(syl))}</span></figcaption>
+    </figure>`;
+}
 
 /* ------------------------------------------------------------------ */
 /* Guided path                                                         */
@@ -303,7 +317,12 @@ function lessonItems(lesson) {
     });
 }
 
-const lessonNoun = lesson => (lesson.items[0][0] === 'syllables' ? 'syllable' : lessonItems(lesson).every(i => i.isChar) ? 'letter' : 'word');
+function lessonNoun(lesson) {
+    const items = lessonItems(lesson);
+    if (lesson.items[0][0] === 'syllables') return 'syllable';
+    if (items.every(i => i.isChar)) return 'letter';
+    return items.some(i => i.key.trim().includes(' ')) ? 'phrase' : 'word';
+}
 
 function statsFor(items) {
     const m = masteryMap();
@@ -811,7 +830,7 @@ function letterTile(item) {
     return `<button type="button" class="letter-tile" data-action="speak" data-text="${esc(sampleSyllable(item.key))}" aria-label="Play ${esc(item.key)}">
         <span class="letter-key lang-text">${esc(item.key)}</span>
         <span class="letter-sound">${esc(mn ? mn[0] : item.rom)}</span>
-        ${mn ? `<span class="letter-mn">${mnemonicText(mn[1])}</span>` : ''}
+        ${mn ? `<span class="letter-mn">${richText(mn[1])}</span>` : ''}
     </button>`;
 }
 
@@ -839,11 +858,19 @@ function renderLearn() {
         ${units.map((u, ui) => {
             const ls = LESSONS.filter(l => l.unit === u);
             const udone = ls.filter(l => lessonDone(l.id)).length;
+            const meta = UNITS.find(x => x.name === u);
             return `<section class="section">
                 <div class="section-head"><h2><span class="step">${ui + 1}</span>${esc(u)}</h2><span class="muted small">${udone} / ${ls.length}</span></div>
+                ${meta ? `<p class="muted small unit-desc">${esc(meta.desc)}</p>` : ''}
                 <ol class="lesson-list">${ls.map(l => lessonRow(l, LESSONS.indexOf(l) + 1, next === l)).join('')}</ol>
             </section>`;
         }).join('')}
+
+        <section class="section">
+            <div class="section-head"><h2>Block builder</h2><span class="muted small">Tap letters to build a syllable</span></div>
+            <p class="muted small chart-note">Every block is a consonant + a vowel, with an optional final consonant underneath. Try any combination and hear it.</p>
+            <div class="panel" id="block-builder"></div>
+        </section>
 
         <section class="section">
             <div class="section-head"><h2>Hangul chart</h2><span class="muted small">Tap a letter to hear it</span></div>
@@ -852,6 +879,28 @@ function renderLearn() {
                 <h3 class="group-title">${label}</h3>
                 <div class="letter-grid">${(topicById(id) || { items: [] }).items.map(letterTile).join('')}</div>`).join('')}
         </section>`;
+    renderBuilder();
+}
+
+const BUILDER_FINALS = ['', 'ㄱ', 'ㄴ', 'ㄷ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅅ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ', 'ㄲ', 'ㅆ'];
+const builderSyllable = () => Hangul.join(app.builder.c, app.builder.v, app.builder.f);
+
+function renderBuilder() {
+    const el = $('#block-builder');
+    if (!el) return;
+    const b = app.builder;
+    const row = (part, label, letters) => `<div class="builder-row">
+        <span class="builder-label">${label}</span>
+        <div class="builder-chips">${letters.map(ch => `<button type="button" class="builder-chip lang-text ${b[part] === ch ? 'is-on' : ''}" data-action="builder" data-part="${part}" data-value="${ch}" aria-pressed="${b[part] === ch}">${ch || 'none'}</button>`).join('')}</div>
+    </div>`;
+    el.innerHTML = `<div class="builder">
+        <div class="builder-out">${blockDiagram(builderSyllable())}</div>
+        <div class="builder-pick">
+            ${row('c', '1 · Consonant', [...Hangul.CHO])}
+            ${row('v', '2 · Vowel', [...Hangul.JUNG])}
+            ${row('f', '3 · Final (optional)', BUILDER_FINALS)}
+        </div>
+    </div>`;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1358,60 +1407,91 @@ function openStudyScreen(mode) {
     $('#study-streak').hidden = mode === 'teach';
 }
 
-/* Guided lesson: an intro card, one teaching card per item, then a quiz on them. */
+/* Guided lesson: an intro card, concept cards, one teaching card per item, then mixed practice. */
 function startLesson(id) {
     const lesson = lessonById(id);
     const items = lesson ? lessonItems(lesson) : [];
     if (!items.length) return;
     stopTimer();
-    app.session = { mode: 'teach', lesson: id, items, queue: items, pool: items, index: -1, item: null, xp: 0 };
+    const steps = [{ intro: true }, ...(lesson.concepts || []).map(concept => ({ concept })), ...items.map(item => ({ item }))];
+    app.session = { mode: 'teach', lesson: id, items, steps, queue: items, pool: items, index: 0, item: null, xp: 0 };
     openStudyScreen('teach');
     renderTeach();
+}
+
+function conceptCard(c) {
+    const table = c.table ? `<div class="concept-table-wrap"><table class="concept-table">
+        <thead><tr>${c.table.head.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead>
+        <tbody>${c.table.rows.map(r => `<tr>${r.map(cell => `<td class="${hasHangul(cell) ? 'lang-text' : ''}">${esc(cell)}</td>`).join('')}</tr>`).join('')}</tbody>
+    </table></div>` : '';
+    // The first speaker's lines sit on the left, everyone else's on the right.
+    const dialogue = c.dialogue ? `<div class="dialogue">${c.dialogue.map(([who, ko, en]) => `
+        <button type="button" class="dialogue-line ${who !== c.dialogue[0][0] ? 'is-b' : ''}" data-action="speak" data-text="${esc(ko)}">
+            <span class="dialogue-who">${esc(who)}</span>
+            <span class="dialogue-text"><span class="lang-text">${esc(ko)}</span><span class="muted small">${esc(Hangul.romanize(ko))}</span><span>${esc(en)}</span></span>
+            ${icon('volume', 'icon-sm')}
+        </button>`).join('')}</div>` : '';
+    return `<div class="prompt concept-card">
+        <div class="prompt-label">${c.dialogue ? 'Conversation · tap a line to hear it' : 'How it works'}</div>
+        <h2>${esc(c.title)}</h2>
+        ${(c.text || []).map(t => `<p>${richText(t)}</p>`).join('')}
+        ${c.blocks ? `<div class="block-row">${c.blocks.map(b => blockDiagram(b)).join('')}</div>` : ''}
+        ${table}${dialogue}
+    </div>`;
 }
 
 function renderTeach() {
     const s = app.session;
     const lesson = lessonById(s.lesson);
+    const step = s.steps[s.index];
     const n = s.items.length;
     const noun = lessonNoun(lesson);
+    const last = s.index === s.steps.length - 1;
+    const nextLabel = last ? 'Start practice' : step.intro ? "Let's go" : 'Got it';
+    const nav = `<div class="fc-actions">
+            ${s.index > 0 ? '<button type="button" class="btn btn-secondary btn-lg" data-action="teach-back">Back</button>' : ''}
+            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="teach-next">${nextLabel} <kbd>Enter</kbd></button>
+        </div>`;
     updateStudyBar();
+    s.item = step.item || null;
     const body = $('#study-body');
 
-    if (s.index < 0) {
-        s.item = null;
+    if (step.intro) {
+        const extras = [lesson.build && 'block building', s.items.some(i => i.key.trim().includes(' ')) && 'sentence building', koreanVoice() && 'listening'].filter(Boolean);
         body.innerHTML = `<div class="study-card">
             <div class="prompt teach-intro">
                 <div class="prompt-label">Lesson ${LESSONS.indexOf(lesson) + 1} · ${esc(lesson.unit)}</div>
                 <h2>${esc(lesson.title)}</h2>
-                <div class="teach-preview lang-text">${s.items.map(i => esc(i.key)).join(' ')}</div>
-                <ul class="teach-tips">${lesson.intro.map(t => `<li>${esc(t)}</li>`).join('')}</ul>
-                <span class="muted small">${plural(n, `new ${noun}`)}, then a short quiz.</span>
+                <div class="teach-preview lang-text">${esc(lesson.desc)}</div>
+                <ul class="teach-tips">${lesson.intro.map(t => `<li>${richText(t)}</li>`).join('')}</ul>
+                <span class="muted small">${lesson.concepts ? `${plural(lesson.concepts.length, 'short note')}, ` : ''}${plural(n, `new ${noun}`)}, then practice: quizzes${extras.length ? `, ${extras.join(', ')}` : ''}.</span>
             </div>
-            <button type="button" class="btn btn-primary btn-lg btn-block" data-action="teach-next">Let's go <kbd>Enter</kbd></button>
+            ${nav}
         </div>`;
         return;
     }
+    if (step.concept) {
+        body.innerHTML = `<div class="study-card">${conceptCard(step.concept)}${nav}</div>`;
+        return;
+    }
 
-    const it = s.items[s.index];
-    s.item = it;
+    const it = step.item;
     const mn = mnemonicFor(it);
     const ex = exampleFor(it);
-    const last = s.index === n - 1;
+    const syllable = it.isChar && Hangul.split(it.key);
+    const len = [...it.key].length;
     body.innerHTML = `<div class="study-card">
         <div class="prompt teach-card">
-            <div class="prompt-label">New ${noun} · ${s.index + 1} of ${n}</div>
-            <div class="prompt-text lang-text ${[...it.key].length > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>
+            <div class="prompt-label">New ${noun} · ${s.items.indexOf(it) + 1} of ${n}</div>
+            ${syllable ? blockDiagram(it.key, { speakable: false }) : `<div class="prompt-text lang-text ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>`}
             ${it.isChar
-                ? `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>`
+                ? (syllable ? '' : `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>`)
                 : `<div class="teach-sound">${esc(it.rom)}</div><div class="back-def">${esc(it.def)}</div>`}
-            ${mn ? `<div class="mnemonic mnemonic-lg"><span>${mnemonicText(mn[1])}</span></div>` : ''}
+            ${mn ? `<div class="mnemonic mnemonic-lg"><span>${richText(mn[1])}</span></div>` : ''}
             ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
             <button type="button" class="btn btn-secondary btn-sm teach-play" data-action="replay-audio">${icon('volume', 'icon-sm')}${it.isChar && sampleSyllable(it.key) !== it.key ? `Hear it in <span class="lang-text">${esc(sampleSyllable(it.key))}</span>` : 'Hear it'}</button>
         </div>
-        <div class="fc-actions">
-            <button type="button" class="btn btn-secondary btn-lg" data-action="teach-back">Back</button>
-            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="teach-next">${last ? 'Start the quiz' : 'Got it'} <kbd>Enter</kbd></button>
-        </div>
+        ${nav}
     </div>`;
     speakItem(it);
 }
@@ -1421,8 +1501,156 @@ function teachStep(dir) {
     if (!s || s.mode !== 'teach') return;
     if (dir < 0 && s.index <= 0) return;
     s.index += dir;
-    if (s.index >= s.items.length) startSession({ items: s.items, mode: 'quiz', reverse: false, lesson: s.lesson });
+    if (s.index >= s.steps.length) startSession({ items: s.items, mode: 'lesson', reverse: false, lesson: s.lesson });
     else renderTeach();
+}
+
+/* Lesson practice: a mix of exercise types over the lesson's items. */
+const LETTER_POOL = { c: 'ㄱㄴㄷㄹㅁㅂㅅㅇㅈㅊㅋㅌㅍㅎ', v: 'ㅏㅓㅗㅜㅡㅣㅐㅔㅑㅕㅛㅠ' };
+
+function buildItem(syl) {
+    const rom = Hangul.romanize(syl);
+    return { id: `gen:build:${syl}`, key: syl, rom, def: rom, isChar: true, gen: true };
+}
+
+function lessonExercises(lesson) {
+    const items = lessonItems(lesson);
+    const words = items.filter(i => !i.isChar);
+    const ex = items.map(item => ({ kind: 'choice', item }));
+    shuffle(words).slice(0, Math.ceil(words.length / 2)).forEach(item => ex.push({ kind: 'reverse', item }));
+    if (koreanVoice()) shuffle(items).slice(0, Math.ceil(items.length / 3)).forEach(item => ex.push({ kind: 'listen', item }));
+    words.filter(i => i.key.trim().split(/\s+/).length > 1).forEach(item => ex.push({ kind: 'order', item }));
+    (lesson.build || []).forEach(syl => ex.push({ kind: 'build', item: buildItem(syl) }));
+    // Start with plain recognition so every item gets a first look before the harder exercises.
+    const choice = shuffle(ex.filter(e => e.kind === 'choice'));
+    const half = Math.ceil(choice.length / 2);
+    return [...choice.slice(0, half), ...shuffle([...choice.slice(half), ...ex.filter(e => e.kind !== 'choice')])];
+}
+
+function lessonQuestion(ex) {
+    const it = ex.item;
+    const hint = app.store.prefs.hints && it.rom && !it.isChar ? it.rom : '';
+    if (ex.kind === 'reverse') return { prompt: it.def, promptLang: false, hint: '', answer: it.key, answerLang: true, label: 'Which is this in Korean?' };
+    if (ex.kind === 'listen') return { prompt: '', audio: true, hint: '', answer: it.def, answerLang: false, label: 'What did you hear?' };
+    if (ex.kind === 'build') return { prompt: it.rom, label: 'Build this syllable', answer: it.key };
+    if (ex.kind === 'order') return { prompt: it.def, label: 'Put the words in order', answer: it.key };
+    return { prompt: it.key, promptLang: true, hint, answer: it.def, answerLang: false, label: it.isChar ? 'How does this sound?' : 'What does this mean?' };
+}
+
+function renderBuild() {
+    const s = app.session;
+    const p = Hangul.split(s.item.key);
+    if (!s.build) {
+        const parts = [p.initial, p.vowel, p.final].filter(Boolean);
+        const extraC = shuffle([...LETTER_POOL.c].filter(c => !parts.includes(c))).slice(0, 2);
+        const extraV = shuffle([...LETTER_POOL.v].filter(v => !parts.includes(v))).slice(0, 2);
+        s.build = { tiles: shuffle([...parts, ...extraC, ...extraV]), picked: [], note: 'Start with a consonant, then add a vowel.' };
+    }
+    const b = s.build;
+    const [c, v, f] = b.picked.map(i => b.tiles[i]);
+    const made = c && v ? Hangul.join(c, v, f || '') : null;
+    const slot = (ch, role, label) => `<span class="part part-${role} ${ch ? '' : 'is-empty'}"><span class="lang-text">${esc(ch || '?')}</span><small>${label}</small></span>`;
+    $('#study-body').innerHTML = `<div class="study-card">
+        <div class="prompt">
+            <div class="prompt-label">${esc(s.q.label)}</div>
+            <div class="prompt-text is-mid">${esc(s.q.prompt)}</div>
+            <div class="build-stage">
+                <div class="block block-${v ? blockShape(v) : 'side'} ${p.final || f ? 'has-final' : ''}">
+                    ${slot(c, 'c', 'consonant')}${slot(v, 'v', 'vowel')}${p.final || f ? slot(f, 'f', 'final') : ''}
+                </div>
+                <div class="build-result lang-text">${made ? `= ${esc(made)}` : ''}</div>
+            </div>
+            <div class="prompt-hint">${esc(b.note)}</div>
+        </div>
+        <div class="tile-bank">${b.tiles.map((t, i) => `<button type="button" class="tile lang-text ${Hangul.isVowel(t) ? 'is-vowel' : ''}" data-action="build-tile" data-index="${i}" ${b.picked.includes(i) || s.locked ? 'disabled' : ''}>${esc(t)}</button>`).join('')}</div>
+        <div class="fc-actions">
+            <button type="button" class="btn btn-secondary btn-lg" data-action="build-undo" ${b.picked.length && !s.locked ? '' : 'disabled'}>Undo</button>
+            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="check-exercise" ${made && !s.locked ? '' : 'disabled'}>Check <kbd>Enter</kbd></button>
+        </div>
+    </div><div class="feedback-slot" id="feedback"></div>`;
+}
+
+// Tiles go in block order: consonant, vowel, then an optional final consonant.
+function pickBuildTile(index) {
+    const s = app.session;
+    const b = s && s.build;
+    if (!b || s.locked || b.picked.includes(index) || b.picked.length >= 3) return;
+    const ch = b.tiles[index];
+    const n = b.picked.length;
+    if (n === 0 && !Hangul.isConsonant(ch)) b.note = 'Every block starts with a consonant. Pick one of those first.';
+    else if (n === 1 && !Hangul.isVowel(ch)) b.note = 'A block needs a vowel next. Two consonants in a row is not a syllable.';
+    else if (n === 2 && !Hangul.join(b.tiles[b.picked[0]], b.tiles[b.picked[1]], ch)) b.note = 'Only a consonant can sit at the bottom as a final.';
+    else {
+        b.picked.push(index);
+        b.note = n === 0 ? 'Now add a vowel.' : n === 1 ? 'Add a final consonant if it needs one, or check.' : 'Ready to check.';
+        speak(n === 0 ? sampleSyllable(ch) : Hangul.join(...b.picked.map(i => b.tiles[i])));
+    }
+    renderBuild();
+}
+
+function renderOrder() {
+    const s = app.session;
+    if (!s.order) {
+        const words = s.item.key.trim().split(/\s+/);
+        let tiles = shuffle(words.map(w => ({ w })));
+        for (let t = 0; t < 5 && tiles.every((x, n) => x.w === words[n]); t++) tiles = shuffle(tiles);
+        s.order = { tiles, picked: [] };
+    }
+    const o = s.order;
+    $('#study-body').innerHTML = `<div class="study-card">
+        <div class="prompt">
+            <div class="prompt-label">${esc(s.q.label)}</div>
+            <div class="prompt-text is-long">${esc(s.q.prompt)}</div>
+            <div class="order-line ${o.picked.length ? '' : 'is-empty'}">${o.picked.length
+                ? o.picked.map((t, n) => `<button type="button" class="tile lang-text" data-action="order-remove" data-pos="${n}" ${s.locked ? 'disabled' : ''}>${esc(o.tiles[t].w)}</button>`).join('')
+                : '<span class="muted small">Tap the words below in order. The verb comes last.</span>'}</div>
+        </div>
+        <div class="tile-bank">${o.tiles.map((t, i) => `<button type="button" class="tile lang-text" data-action="order-pick" data-index="${i}" ${o.picked.includes(i) || s.locked ? 'disabled' : ''}>${esc(t.w)}</button>`).join('')}</div>
+        <div class="fc-actions">
+            <button type="button" class="btn btn-secondary btn-lg" data-action="order-remove" data-pos="${o.picked.length - 1}" ${o.picked.length && !s.locked ? '' : 'disabled'}>Undo</button>
+            <button type="button" class="btn btn-primary btn-lg teach-next" data-action="check-exercise" ${o.picked.length === o.tiles.length && !s.locked ? '' : 'disabled'}>Check <kbd>Enter</kbd></button>
+        </div>
+    </div><div class="feedback-slot" id="feedback"></div>`;
+}
+
+function pickOrderTile(index) {
+    const s = app.session;
+    const o = s && s.order;
+    if (!o || s.locked || o.picked.includes(index)) return;
+    o.picked.push(index);
+    renderOrder();
+}
+
+function removeOrderTile(pos) {
+    const s = app.session;
+    const o = s && s.order;
+    if (!o || s.locked || pos < 0) return;
+    o.picked.splice(pos, 1);
+    renderOrder();
+}
+
+function checkExercise() {
+    const s = app.session;
+    if (!s || s.locked || s.mode !== 'lesson') return;
+    let ok, extra = '';
+    if (s.ex.kind === 'build') {
+        const b = s.build;
+        const [c, v, f] = b.picked.map(i => b.tiles[i]);
+        const made = c && v ? Hangul.join(c, v, f || '') : null;
+        if (!made) return;
+        const p = Hangul.split(s.item.key);
+        ok = made === s.item.key;
+        extra = `${[p.initial, p.vowel, p.final].filter(Boolean).join(' + ')} = <span class="lang-text">${esc(s.item.key)}</span> <span class="muted">(${esc(s.item.rom)})</span>${ok ? '' : ` · you built <span class="lang-text">${esc(made)}</span>`}`;
+    } else if (s.ex.kind === 'order') {
+        const o = s.order;
+        if (o.picked.length !== o.tiles.length) return;
+        ok = o.picked.map(i => o.tiles[i].w).join(' ') === s.item.key.trim().split(/\s+/).join(' ');
+    } else return;
+    s.locked = true;
+    grade(ok);
+    if (s.ex.kind === 'build') renderBuild(); else renderOrder();
+    speakItem(s.item);
+    showFeedback(ok, extra);
 }
 
 function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill, lesson } = {}) {
@@ -1434,7 +1662,9 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
     const length = drill || lesson ? 0 : app.store.prefs.length;
     const t = dayNum();
     let queue;
-    if (mode === 'speedMatch') {
+    if (mode === 'lesson') {
+        queue = lessonExercises(lessonById(lesson));
+    } else if (mode === 'speedMatch') {
         queue = shuffle(pool);
     } else {
         // Due words first, then new ones, then the weakest; a little randomness keeps sessions varied.
@@ -1487,8 +1717,8 @@ function stopTimer() {
 function updateStudyBar() {
     const s = app.session;
     if (s.mode === 'teach') {
-        $('#study-progress-fill').style.width = `${(s.index + 1) / (s.items.length + 1) * 100}%`;
-        $('#study-count').textContent = s.index < 0 ? 'Intro' : `${s.index + 1} / ${s.items.length}`;
+        $('#study-progress-fill').style.width = `${(s.index + 1) / s.steps.length * 100}%`;
+        $('#study-count').textContent = `${s.index + 1} / ${s.steps.length}`;
         return;
     }
     let pct;
@@ -1562,15 +1792,26 @@ function nextQuestion() {
     if (s.mode === 'speedMatch' && s.index >= s.queue.length) s.queue.push(...shuffle(s.pool));
     if (s.index >= s.queue.length) return finishSession();
 
-    s.item = s.queue[s.index];
-    s.q = buildQuestion(s.item);
+    if (s.mode === 'lesson') {
+        s.ex = s.queue[s.index];
+        s.item = s.ex.item;
+        s.q = lessonQuestion(s.ex);
+    } else {
+        s.item = s.queue[s.index];
+        s.q = buildQuestion(s.item);
+    }
     s.locked = false;
     s.revealed = false;
     s.awaitingContinue = false;
+    s.build = s.order = null;
     updateStudyBar();
 
     const body = $('#study-body');
-    if (['quiz', 'speedMatch', 'listening'].includes(s.mode)) {
+    if (s.mode === 'lesson' && s.ex.kind === 'build') {
+        renderBuild();
+    } else if (s.mode === 'lesson' && s.ex.kind === 'order') {
+        renderOrder();
+    } else if (['quiz', 'speedMatch', 'listening', 'lesson'].includes(s.mode)) {
         s.q.options = buildOptions(s.q, s.item);
         body.innerHTML = `<div class="study-card">${promptBlock(s.q, s.item)}
             <div class="options">${s.q.options.map((o, i) => `
@@ -1609,7 +1850,7 @@ function nextQuestion() {
         setTimeout(() => { const el = $('#type-input'); if (el) el.focus(); }, 30);
     }
 
-    if (s.mode === 'listening') setTimeout(() => speakItem(s.item), 150);
+    if (s.q.audio) setTimeout(() => speakItem(s.item), 150);
     else if (app.store.autoAudio && s.q.promptLang) speakItem(s.item);
 }
 
@@ -1653,7 +1894,7 @@ function requeue(item, gap) {
     const n = s.repeats.get(item.id) || 0;
     if (n >= 2) return;
     s.repeats.set(item.id, n + 1);
-    s.queue.splice(Math.min(s.index + gap, s.queue.length), 0, item);
+    s.queue.splice(Math.min(s.index + gap, s.queue.length), 0, s.mode === 'lesson' ? s.ex : item);
 }
 
 function answerText(item) {
@@ -1669,7 +1910,7 @@ function showFeedback(ok, extra = '') {
         <div class="feedback-text">
             <strong>${ok ? 'Correct!' : 'Not quite'}</strong>
             <span>${extra || answerText(s.item)}</span>
-            ${mnemonicFor(s.item) ? `<span class="feedback-ex">${mnemonicText(mnemonicFor(s.item)[1])}</span>` : ''}
+            ${mnemonicFor(s.item) ? `<span class="feedback-ex">${richText(mnemonicFor(s.item)[1])}</span>` : ''}
             ${ex ? `<span class="feedback-ex"><span class="lang-text">${esc(ex[0])}</span> ${esc(ex[1])}</span>` : ''}
         </div>
         <button type="button" class="btn ${ok ? 'btn-success' : 'btn-primary'}" data-action="continue" id="continue-btn">Continue <kbd>Enter</kbd></button>
@@ -1700,7 +1941,7 @@ function answerQuiz(index) {
     grade(ok);
     if (s.mode === 'speedMatch') {
         setTimeout(advance, ok ? 300 : 900);
-    } else if (s.mode === 'listening') {
+    } else if (s.q.audio) {
         // Always reveal what was said, so the sound gets linked to the word.
         showFeedback(ok);
     } else if (ok) {
@@ -1973,6 +2214,12 @@ const actions = {
     'start-lesson': el => startLesson(el.dataset.lesson),
     'teach-next': () => teachStep(1),
     'teach-back': () => teachStep(-1),
+    'build-tile': el => pickBuildTile(Number(el.dataset.index)),
+    'build-undo': () => { const s = app.session; if (s && s.build && !s.locked) { s.build.picked.pop(); s.build.note = s.build.picked.length ? 'Pick again.' : 'Start with a consonant, then add a vowel.'; renderBuild(); } },
+    'order-pick': el => pickOrderTile(Number(el.dataset.index)),
+    'order-remove': el => removeOrderTile(Number(el.dataset.pos)),
+    'check-exercise': () => checkExercise(),
+    'builder': el => { app.builder[el.dataset.part] = el.dataset.value; renderBuilder(); const syl = builderSyllable(); if (syl) speak(syl); },
     'exit-to-learn': () => { exitSession(); go('learn'); },
     'answer': el => answerQuiz(Number(el.dataset.index)),
     'continue': () => continueSession(),
@@ -2114,7 +2361,12 @@ function bindEvents() {
 
         if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) { actions['replay-audio'](); return; }
 
-        if (['quiz', 'speedMatch', 'listening'].includes(s.mode) && /^[1-4]$/.test(e.key)) {
+        if (s.mode === 'lesson' && (s.build || s.order)) {
+            if (e.key === 'Enter') { e.preventDefault(); checkExercise(); }
+            else if (e.key === 'Backspace') { e.preventDefault(); actions[s.build ? 'build-undo' : 'order-remove']({ dataset: { pos: s.order ? s.order.picked.length - 1 : 0 } }); }
+            return;
+        }
+        if ((['quiz', 'speedMatch', 'listening'].includes(s.mode) || (s.mode === 'lesson' && s.q.options)) && /^[1-4]$/.test(e.key)) {
             answerQuiz(Number(e.key) - 1);
         } else if (s.mode === 'flashcards') {
             if (!s.revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); flipCard(); }

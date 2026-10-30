@@ -54,6 +54,26 @@ const Hangul = (() => {
         return chars.map((c, n) => (parts[n] ? parts[n].ini + parts[n].vow + parts[n].fin : c)).join('');
     }
 
+    /* ---- Syllable blocks ---- */
+    const CHO = 'ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ';
+    const JUNG = 'ㅏㅐㅑㅒㅓㅔㅕㅖㅗㅘㅙㅚㅛㅜㅝㅞㅟㅠㅡㅢㅣ';
+    const JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+
+    // 강 → { initial: 'ㄱ', vowel: 'ㅏ', final: 'ㅇ' }
+    function split(ch) {
+        const p = parse(ch || '');
+        return p && { initial: CHO[p.ini], vowel: JUNG[p.vow], final: JONG[p.fin] };
+    }
+
+    // ('ㄱ', 'ㅏ', 'ㅇ') → 강, or null when the letters can't form a block.
+    function join(initial, vowel, final = '') {
+        const i = CHO.indexOf(initial), v = JUNG.indexOf(vowel), f = JONG.indexOf(final);
+        return i < 0 || v < 0 || f < 0 || !initial || !vowel ? null : String.fromCharCode(0xac00 + i * 588 + v * 28 + f);
+    }
+
+    const isConsonant = ch => !!ch && CHO.includes(ch);
+    const isVowel = ch => !!ch && JUNG.includes(ch);
+
     /* ---- Numbers ---- */
     const SINO_DIGITS = ['', '일', '이', '삼', '사', '오', '육', '칠', '팔', '구'];
     const SINO_UNITS = ['', '십', '백', '천'];
@@ -109,5 +129,5 @@ const Hangul = (() => {
         return romanize(String(reading).replace(/([십백천만억])육/g, '$1뉵'));
     }
 
-    return { romanize, sino, native, nativeCounter, months: MONTHS, numberRom };
+    return { romanize, split, join, isConsonant, isVowel, CHO, JUNG, sino, native, nativeCounter, months: MONTHS, numberRom };
 })();

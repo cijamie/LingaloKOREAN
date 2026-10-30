@@ -1,6 +1,6 @@
 // Network-first for the app's own files so updates show up right away,
 // with the cache as an offline fallback.
-const CACHE_NAME = 'lingalokr-v2';
+const CACHE_NAME = 'lingalokr-v3';
 const ASSETS = [
   './',
   'index.html',
