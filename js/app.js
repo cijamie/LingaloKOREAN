@@ -532,17 +532,70 @@ function haptic(type) {
     navigator.vibrate(type === 'success' ? 12 : [40, 30, 40]);
 }
 
-const koreanVoice = () => (window.speechSynthesis ? window.speechSynthesis.getVoices().find(v => v.lang.toLowerCase().startsWith('ko')) : null);
+/* Text-to-speech with the browser's voices. Browsers fail silently in a few known ways:
+   an utterance spoken right after cancel() gets dropped (Safari, Chrome's online voices),
+   phones stay mute until the page speaks during a tap, an utterance can be garbage-collected
+   before it plays, and some listed voices never start. speak() works around each of these. */
+const Voice = {
+    current: null,
+    silent: new Set(),       // voices that didn't start on this device
+    warned: false,
+    all() { return window.speechSynthesis ? window.speechSynthesis.getVoices().filter(v => /^ko/i.test(v.lang)) : []; },
+    // Prefer voices installed on the device; online voices are slower and fail more often.
+    pick() {
+        const ok = this.all().filter(v => !this.silent.has(v.voiceURI));
+        return ok.find(v => v.localService) || ok[0] || null;
+    }
+};
+const koreanVoice = () => Voice.all()[0] || null;
 
-function speak(text) {
-    if (!text || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang = LANG.speechLang;
-    utt.rate = app.store.speechRate || 1;
-    const voice = koreanVoice();
-    if (voice) utt.voice = voice;
-    window.speechSynthesis.speak(utt);
+// onStatus(state, voice) is told 'playing' or 'failed'; by default a failure shows one hint per visit.
+function speak(text, onStatus) {
+    const synth = window.speechSynthesis;
+    if (!text || !synth) return;
+    const report = onStatus || ((state) => {
+        if (state !== 'failed' || Voice.warned) return;
+        Voice.warned = true;
+        toast("Couldn't play the audio. Check your volume (and silent mode on phones), or try Chrome or Edge.", 'error');
+    });
+    const busy = synth.speaking || synth.pending;
+    if (busy) synth.cancel();
+
+    const attempt = n => {
+        const voice = Voice.pick();
+        const utt = new SpeechSynthesisUtterance(text);
+        utt.lang = voice ? voice.lang : LANG.speechLang;
+        utt.rate = Number(app.store.speechRate) || 1;
+        if (voice) utt.voice = voice;
+        let started = false;
+        const retry = () => {
+            if (voice) Voice.silent.add(voice.voiceURI);
+            if (n < 2 && Voice.pick() !== voice) setTimeout(() => attempt(n + 1), 80);
+            else report('failed', voice);
+        };
+        utt.onstart = () => { started = true; report('playing', voice); };
+        utt.onerror = e => { if (!started && !['interrupted', 'canceled'].includes(e.error)) retry(); };
+        Voice.current = utt;        // keep a reference so it isn't garbage-collected mid-word
+        synth.resume();             // Chrome can get stuck paused after the tab was in the background
+        synth.speak(utt);
+        // Nothing started within a few seconds: this voice is silent here, so try the next one.
+        setTimeout(() => {
+            if (started || Voice.current !== utt) return;
+            synth.cancel();
+            retry();
+        }, 3000);
+    };
+    // Straight after cancel() some browsers drop the next utterance, so wait a moment;
+    // otherwise speak right away so a tap on a phone still counts as the user's gesture.
+    if (busy) setTimeout(() => attempt(0), 120); else attempt(0);
+}
+
+// Phones keep speech muted until the page speaks during a tap: say nothing on the first one.
+function unlockSpeech() {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    window.speechSynthesis.speak(u);
 }
 
 function confetti(x = window.innerWidth / 2, y = window.innerHeight / 3) {
@@ -1428,7 +1481,7 @@ function renderSettings() {
     const theme = themePref();
     const seg = (action, current, opts) => `<div class="segmented" role="radiogroup">${opts.map(([v, label, ic]) =>
         `<button type="button" role="radio" aria-checked="${String(current) === String(v)}" class="${String(current) === String(v) ? 'is-on' : ''}" data-action="${action}" data-value="${v}">${ic ? icon(ic, 'icon-sm') : ''}${label}</button>`).join('')}</div>`;
-    const voice = koreanVoice();
+    const voice = Voice.pick() || koreanVoice();
 
     $('#view-settings').innerHTML = `
         <header class="page-head">
@@ -1467,8 +1520,11 @@ function renderSettings() {
                     <div class="range-wrap">
                         <input type="range" id="speech-rate" min="0.6" max="1.3" step="0.05" value="${s.speechRate || 1}">
                         <output id="speech-rate-val">${(s.speechRate || 1).toFixed(2)}×</output>
-                        <button type="button" class="icon-btn" data-action="test-speech" aria-label="Test speech">${icon('volume')}</button>
                     </div>
+                </div>
+                <div class="setting-row">
+                    <span><strong>Test the sound</strong><small id="speech-status">Plays 안녕하세요 and tells you whether it worked</small></span>
+                    <button type="button" class="btn btn-secondary btn-sm" data-action="test-speech">${icon('volume', 'icon-sm')}Play test</button>
                 </div>
             </section>
 
@@ -2503,7 +2559,15 @@ const actions = {
     },
     'set-theme': el => { applyTheme(el.dataset.value); renderSettings(); },
     'set-goal': el => { app.store.dailyGoal = Number(el.dataset.value); save(); renderSettings(); },
-    'test-speech': () => speak('안녕하세요'),
+    'test-speech': () => {
+        const status = $('#speech-status');
+        const set = text => { if (status) status.textContent = text; };
+        if (!window.speechSynthesis) { set("This browser can't speak. Try Chrome, Edge or Safari."); return; }
+        set('Playing…');
+        speak('안녕하세요', (state, voice) => set(state === 'playing'
+            ? `Playing with ${voice ? voice.name : 'the default voice'}. Can't hear it? Turn up the volume${'ontouchstart' in window ? ' and turn off silent mode' : ''}.`
+            : `The browser didn't play anything${voice ? ` with ${voice.name}` : ''}. ${Voice.all().length ? 'Try another browser (Chrome or Edge work best).' : 'There is no Korean voice on this device: install one in your system settings, or use Chrome or Edge.'}`));
+    },
     'export': exportProgress,
     'import': () => $('#import-file').click(),
     'copy-transfer': async () => {
@@ -2720,6 +2784,8 @@ function bindEvents() {
 
     // Voices load asynchronously; refresh Settings so the voice name shows up.
     if (window.speechSynthesis) window.speechSynthesis.addEventListener('voiceschanged', () => { if (app.view === 'settings') renderSettings(); });
+    document.addEventListener('pointerdown', unlockSpeech, { once: true });
+    document.addEventListener('keydown', unlockSpeech, { once: true });
 }
 
 /* ------------------------------------------------------------------ */
