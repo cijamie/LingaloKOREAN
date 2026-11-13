@@ -69,7 +69,7 @@ function renderSpeak() {
         <div class="prompt">
             <div class="prompt-label">Say it out loud</div>
             <div class="prompt-text lang-text ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>
-            <div class="prompt-hint">${esc(it.isChar ? '' : it.rom)}</div>
+            <div class="prompt-hint">${esc(romanHint(it))}</div>
             <div class="muted">${esc(it.isChar ? '' : it.def)}</div>
             <button type="button" class="listen-btn mic-btn ${sp.listening ? 'is-listening' : ''}" data-action="speak-listen" aria-label="${sp.listening ? 'Listening' : 'Start speaking'}" ${s.locked ? 'disabled' : ''}>${icon('mic')}</button>
             <div class="speak-note ${sp.heard ? '' : 'muted'}">${sp.heard ? `Heard: <span class="lang-text">${esc(sp.heard)}</span> · ` : ''}${esc(sp.note)}</div>

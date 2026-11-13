@@ -293,6 +293,11 @@ function romanHint(item) {
     if (pref === 'always' || item.gen) return item.rom;
     return stageOf(item) <= 1 ? item.rom : '';
 }
+const noRoman = () => app.store.prefs.roman === 'never';
+// On cards that introduce a word: its romanization, or with "Never" a button to peek at it.
+const introRoman = it => (noRoman()
+    ? `<div class="teach-sound" id="rom-slot"><button type="button" class="link-btn peek-rom" data-action="peek-rom">Show pronunciation <kbd>H</kbd></button></div>`
+    : `<div class="teach-sound">${esc(it.rom)}</div>`);
 const romanHidden = item => !!item && !!item.rom && !item.isChar && app.store.prefs.roman !== 'never' && !romanHint(item);
 
 /* ------------------------------------------------------------------ */
@@ -1737,7 +1742,7 @@ function conceptCard(c) {
     const dialogue = c.dialogue ? `<div class="dialogue">${c.dialogue.map(([who, ko, en]) => `
         <button type="button" class="dialogue-line ${who !== c.dialogue[0][0] ? 'is-b' : ''}" data-action="speak" data-text="${esc(ko)}">
             <span class="dialogue-who">${esc(who)}</span>
-            <span class="dialogue-text"><span class="lang-text">${esc(ko)}</span><span class="muted small">${esc(Hangul.romanize(ko))}</span><span>${esc(en)}</span></span>
+            <span class="dialogue-text"><span class="lang-text">${esc(ko)}</span>${noRoman() ? '' : `<span class="muted small">${esc(Hangul.romanize(ko))}</span>`}<span>${esc(en)}</span></span>
             ${icon('volume', 'icon-sm')}
         </button>`).join('')}</div>` : '';
     return `<div class="prompt concept-card">
@@ -1797,7 +1802,7 @@ function renderTeach() {
             ${syllable ? blockDiagram(it.key, { speakable: false }) : `<div class="prompt-text lang-text ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>`}
             ${it.isChar
                 ? (syllable ? '' : `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>`)
-                : `<div class="teach-sound">${esc(it.rom)}</div><div class="back-def">${esc(it.def)}</div>`}
+                : `${introRoman(it)}<div class="back-def">${esc(it.def)}</div>`}
             ${mn ? `<div class="mnemonic mnemonic-lg"><span>${richText(mn[1])}</span></div>` : ''}
             ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
             <button type="button" class="btn btn-secondary btn-sm teach-play" data-action="replay-audio">${icon('volume', 'icon-sm')}${it.isChar && sampleSyllable(it.key) !== it.key ? `Hear it in <span class="lang-text">${esc(sampleSyllable(it.key))}</span>` : 'Hear it'}</button>
@@ -1947,7 +1952,7 @@ function renderIntro() {
         <div class="prompt teach-card">
             <div class="prompt-label">New ${it.isChar ? 'letter' : 'word'}</div>
             <div class="prompt-text lang-text ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>
-            ${it.isChar ? `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>` : `<div class="teach-sound">${esc(it.rom)}</div><div class="back-def">${esc(it.def)}</div>`}
+            ${it.isChar ? `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>` : `${introRoman(it)}<div class="back-def">${esc(it.def)}</div>`}
             ${it.note ? `<div class="muted small">${esc(it.note)}</div>` : ''}
             ${mn ? `<div class="mnemonic mnemonic-lg"><span>${richText(mn[1])}</span></div>` : ''}
             ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
@@ -2255,8 +2260,8 @@ const hintLine = q => (q.hint
 function peekRoman() {
     const s = app.session;
     const slot = $('#rom-slot');
-    if (!s || !s.item || !slot || !s.q.romHidden) return;
-    if (!s.locked) s.peeked = true;
+    if (!s || !s.item || !slot) return;
+    if (s.q && s.q.romHidden && !s.locked) s.peeked = true;
     slot.textContent = s.item.rom;
 }
 
@@ -2327,7 +2332,7 @@ function nextQuestion() {
                     <div class="face face-back">
                         <div class="prompt-label">Answer</div>
                         <div class="back-key lang-text">${esc(it.key)}</div>
-                        ${it.rom && !it.isChar ? `<div class="back-rom">${esc(it.rom)}</div>` : ''}
+                        ${it.rom && !it.isChar && !noRoman() ? `<div class="back-rom">${esc(it.rom)}</div>` : ''}
                         <div class="back-def">${esc(it.def)}</div>
                         ${mnemonicLine(it)}
                         ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
@@ -2424,7 +2429,7 @@ function sayAnswer() {
 }
 
 function answerText(item) {
-    return `<span class="lang-text">${esc(item.key)}</span>${item.rom && !item.isChar ? ` <span class="muted">(${esc(item.rom)})</span>` : ''} = <strong>${esc(item.def)}</strong>`;
+    return `<span class="lang-text">${esc(item.key)}</span>${item.rom && !item.isChar && !noRoman() ? ` <span class="muted">(${esc(item.rom)})</span>` : ''} = <strong>${esc(item.def)}</strong>`;
 }
 
 function showFeedback(ok, extra = '') {
@@ -2669,7 +2674,7 @@ function finishSession() {
             <div class="missed-list">${missed.map(i => `
                 <button type="button" class="missed-item" data-action="speak" data-text="${esc(i.key)}">
                     <span class="lang-text">${esc(i.key)}</span>
-                    <span class="muted">${i.rom && !i.isChar ? esc(i.rom) + ' · ' : ''}${esc(i.def)}</span>
+                    <span class="muted">${i.rom && !i.isChar && !noRoman() ? esc(i.rom) + ' · ' : ''}${esc(i.def)}</span>
                     ${icon('volume', 'icon-sm')}
                 </button>`).join('')}
             </div></div>` : ''}
@@ -2930,6 +2935,7 @@ function bindEvents() {
             const dir = { 'Enter': 1, ' ': 1, 'ArrowRight': 1, 'ArrowLeft': -1 }[e.key];
             if (dir) { e.preventDefault(); teachStep(dir); }
             else if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) actions['replay-audio']();
+            else if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey) peekRoman();
             return;
         }
         if (s.awaitingContinue && (e.key === 'Enter' || (e.key === ' ' && !inField))) {
