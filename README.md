@@ -58,6 +58,7 @@ Not every right answer counts the same. Recognizing a word (picking it from opti
 ## Learning aids
 
 - **Romanization fades** (Practice → Options): shown while a word is new, then hidden so you read the Hangul. Tap **Show pronunciation** or press `H` to peek; peeking counts as a hint. Can be set to Always or Never.
+- **Can't listen now:** the ear button in the study bar (or the link under a listening question, or Settings → Sound) turns off listening and speaking exercises for an hour. They're swapped for regular questions, even mid-session, and audio doesn't play on its own; the speaker button still works.
 - **Say the answer** (Settings → Sound): the Korean is spoken after every answer, right or wrong, so sound and spelling stick together.
 - **Wrong options that could pass for the answer:** quiz distractors come from the same kind of item (letter, word, sentence) and topic, at a similar length, and sharing syllables. Numbers never appear among words.
 

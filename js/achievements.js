@@ -70,10 +70,10 @@ function planState() {
 function todaysDrill() {
     const learned = allItems().filter(i => deck()[i.id]);
     const options = [
-        Speaking.supported && { mode: 'speaking', label: 'Speaking drill', sub: 'Say 6 words you know out loud', items: learned.filter(i => !i.isChar) },
+        canSpeak() && { mode: 'speaking', label: 'Speaking drill', sub: 'Say 6 words you know out loud', items: learned.filter(i => !i.isChar) },
         { mode: 'hangulTyping', label: 'Typing drill', sub: 'Type 6 words in Hangul', items: learned },
         { mode: 'writing', label: 'Writing drill', sub: 'Trace 6 letters', items: !learned.length ? [] : learned.filter(canWrite).length ? learned.filter(canWrite) : poolFor(['consonants', 'vowels']) },
-        koreanVoice() && { mode: 'listening', label: 'Listening drill', sub: 'Hear 6 words and pick the meaning', items: learned }
+        canListen() && { mode: 'listening', label: 'Listening drill', sub: 'Hear 6 words and pick the meaning', items: learned }
     ].filter(o => o && o.items.length);
     if (!options.length) return null;
     const pick = options[dayNum() % options.length];

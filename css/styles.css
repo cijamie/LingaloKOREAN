@@ -1374,3 +1374,6 @@ details[open] > summary .summary-chevron { transform: rotate(180deg); }
 @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+/* "Can't listen now" toggle in the study bar */
+.quiet-btn.is-on { background: var(--accent-soft); color: var(--accent); }

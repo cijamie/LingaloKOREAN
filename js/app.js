@@ -73,6 +73,12 @@ const NEW_PER_SESSION = 5;
 const RECOGNITION = new Set(['choice', 'listen', 'build', 'particle', 'reply', 'read']);
 // Session modes that run a queue of exercises ({ kind, item }) rather than plain items.
 const exerciseMode = mode => mode === 'lesson' || mode === 'smart';
+// "Can't listen now": for an hour, no listening or speaking exercises and no audio that plays by itself.
+const QUIET_MS = 60 * 60 * 1000;
+const quietMode = () => Date.now() < (app.store.quietUntil || 0);
+const canListen = () => !!koreanVoice() && !quietMode();
+const canSpeak = () => Speaking.supported && !quietMode();
+const quietUntilText = () => new Date(app.store.quietUntil).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 const defaults = () => ({
     version: 6,
@@ -102,6 +108,7 @@ const defaults = () => ({
     speechRate: 1.0,
     autoAudio: false,
     sayAnswer: true,
+    quietUntil: 0,
     prefs: { mode: 'smart', reverse: false, teach: true, roman: 'fade', length: 15, topics: {}, numStyle: 'read', numLevel: 1000, speakEx: true, writeEx: true, typeEx: true }
 });
 
@@ -362,7 +369,7 @@ function mnemonicLine(item, cls = '') {
 // A single letter read aloud gives its name (ㄱ = "giyeok"), so letters are spoken
 // inside a syllable instead: consonants with ㅏ, vowels after a silent ㅇ.
 const sampleSyllable = letter => Hangul.join(letter, 'ㅏ') || Hangul.join('ㅇ', letter) || letter;
-const speakItem = item => speak(item.isChar ? sampleSyllable(item.key) : item.key);
+const speakItem = (item, force = false) => { if (force || !quietMode()) speak(item.isChar ? sampleSyllable(item.key) : item.key); };
 
 // Where the vowel sits decides the block's shape: right of the consonant, under it, or both.
 const blockShape = vowel => ('ㅏㅐㅑㅒㅓㅔㅕㅖㅣ'.includes(vowel) ? 'side' : 'ㅗㅛㅜㅠㅡ'.includes(vowel) ? 'under' : 'wrap');
@@ -1563,6 +1570,10 @@ function renderSettings() {
                     <span><strong>Sound effects</strong><small>Short tones for right and wrong answers</small></span>
                     <input type="checkbox" class="switch" data-setting="sfxEnabled" ${s.sfxEnabled !== false ? 'checked' : ''}>
                 </label>
+                <div class="setting-row">
+                    <span><strong>Can't listen now</strong><small>${quietMode() ? `On until ${quietUntilText()}: no listening or speaking exercises, and nothing plays on its own` : 'Turns off listening and speaking exercises and auto-played audio for an hour'}</small></span>
+                    <button type="button" class="btn ${quietMode() ? 'btn-primary' : 'btn-secondary'} btn-sm" data-action="quiet-toggle">${quietMode() ? 'Turn off' : 'Turn on for 1 hour'}</button>
+                </div>
                 <label class="setting-row">
                     <span><strong>Say the answer</strong><small>Speak the Korean after every answer, right or wrong</small></span>
                     <input type="checkbox" class="switch" data-setting="sayAnswer" ${s.sayAnswer !== false ? 'checked' : ''}>
@@ -1719,6 +1730,40 @@ function openStudyScreen(mode) {
     $('#study-timer').hidden = mode !== 'speedMatch';
     $('#study-count').hidden = mode === 'speedMatch';
     $('#study-streak').hidden = mode === 'teach';
+    renderQuietButton();
+}
+
+function renderQuietButton() {
+    const b = $('#quiet-btn');
+    if (!b) return;
+    const on = quietMode();
+    b.classList.toggle('is-on', on);
+    b.setAttribute('aria-pressed', on);
+    b.title = on ? `Can't listen now: on until ${quietUntilText()}. Click to turn off.` : "Can't listen now: turn off listening and speaking for an hour";
+}
+
+// Turn "Can't listen now" on (for an hour) or off. A session in progress swaps its
+// listening and speaking exercises for plain questions straight away.
+function setQuiet(on) {
+    app.store.quietUntil = on ? Date.now() + QUIET_MS : 0;
+    save();
+    renderQuietButton();
+    if (on) {
+        if (window.speechSynthesis) window.speechSynthesis.cancel();
+        Speaking.stop();
+        toast(`No listening or speaking until ${quietUntilText()}. Audio won't play on its own; the speaker button still works.`, 'info');
+    } else {
+        toast('Listening and speaking are back on.', 'success');
+    }
+    const s = app.session;
+    if (on && s && !s.done && s.mode !== 'teach' && s.mode !== 'matchPairs') {
+        const audioKind = e => e && ['listen', 'speak'].includes(e.kind);
+        if (exerciseMode(s.mode)) s.queue = s.queue.map((e, i) => (i >= s.index && audioKind(e) ? { ...e, kind: 'choice' } : e));
+        const current = (s.ex && audioKind(s.ex)) || ['listening', 'speaking'].includes(s.mode);
+        if (['listening', 'speaking'].includes(s.mode)) s.mode = 'quiz';
+        if (current && !s.locked) nextQuestion();
+    }
+    if (app.view === 'settings' && !app.session) renderSettings();
 }
 
 /* Guided lesson: an intro card, concept cards, one teaching card per item, then mixed practice. */
@@ -1772,8 +1817,8 @@ function renderTeach() {
 
     if (step.intro) {
         const p = app.store.prefs;
-        const extras = [lesson.build && 'block building', s.items.some(i => i.key.trim().includes(' ')) && 'sentence building', koreanVoice() && 'listening',
-            p.speakEx && Speaking.supported && s.items.some(i => !i.isChar) && 'speaking', p.writeEx && s.items.some(canWrite) && 'tracing', p.typeEx && 'Hangul typing'].filter(Boolean);
+        const extras = [lesson.build && 'block building', s.items.some(i => i.key.trim().includes(' ')) && 'sentence building', canListen() && 'listening',
+            p.speakEx && canSpeak() && s.items.some(i => !i.isChar) && 'speaking', p.writeEx && s.items.some(canWrite) && 'tracing', p.typeEx && 'Hangul typing'].filter(Boolean);
         body.innerHTML = `<div class="study-card">
             <div class="prompt teach-intro">
                 <div class="prompt-label">Lesson ${lessonNumber(lesson)} · ${esc(lesson.unit)}</div>
@@ -1871,12 +1916,12 @@ function lessonExercises(lesson) {
     const some = (list, n) => shuffle(list).slice(0, n);
     const ex = items.map(item => ({ kind: 'choice', item }));
     some(wordItems, Math.ceil(wordItems.length / 2)).forEach(item => ex.push({ kind: 'reverse', item }));
-    if (koreanVoice()) some(items, Math.ceil(items.length / 3)).forEach(item => ex.push({ kind: 'listen', item }));
+    if (canListen()) some(items, Math.ceil(items.length / 3)).forEach(item => ex.push({ kind: 'listen', item }));
     sentences.forEach(item => ex.push({ kind: 'order', item }));
     (lesson.build || []).forEach(syl => ex.push({ kind: 'build', item: buildItem(syl) }));
     some(sentences.map(particleExercise).filter(Boolean), Math.ceil(sentences.length / 2)).forEach(e => ex.push(e));
     (lesson.concepts || []).filter(c => c.dialogue).forEach(c => some(replyExercises(c.dialogue), 3).forEach(e => ex.push(e)));
-    if (p.speakEx && Speaking.supported && wordItems.length) some(wordItems, Math.ceil(wordItems.length / 4)).forEach(item => ex.push({ kind: 'speak', item }));
+    if (p.speakEx && canSpeak() && wordItems.length) some(wordItems, Math.ceil(wordItems.length / 4)).forEach(item => ex.push({ kind: 'speak', item }));
     if (p.writeEx) some(items.filter(canWrite), 2).forEach(item => ex.push({ kind: 'write', item }));
     // Producing a word (typing it from its meaning) fixes it in memory far better than picking it out.
     if (p.typeEx) some(items.filter(i => [...i.key].length <= 8), Math.max(2, Math.ceil(items.length / 3))).forEach(item => ex.push({ kind: 'typeko', item }));
@@ -1891,7 +1936,7 @@ function lessonExercises(lesson) {
    to recalling (pick the Korean) to producing (type it in Hangul, build the sentence, say it). */
 function smartExercise(item, stage) {
     const p = app.store.prefs;
-    const voice = !!koreanVoice();
+    const voice = canListen();
     const sentence = !item.isChar && !item.gen && wordsOf(item).length > 2; // ordering two words is a coin flip
     const typeable = p.typeEx && !item.gen && [...item.key].length <= 8;
     const roll = Math.random();
@@ -1905,7 +1950,7 @@ function smartExercise(item, stage) {
         if (sentence) return { kind: 'order', item };
         return { kind: voice && roll < 0.3 ? 'listen' : 'reverse', item };
     }
-    if (p.speakEx && Speaking.supported && roll < 0.2) return { kind: 'speak', item };
+    if (p.speakEx && canSpeak() && roll < 0.2) return { kind: 'speak', item };
     if (sentence) return { kind: typeable && roll < 0.5 ? 'typeko' : 'order', item };
     return { kind: typeable ? 'typeko' : 'reverse', item };
 }
@@ -2107,6 +2152,10 @@ function checkExercise() {
 
 function startSession({ topics, items, mode = app.store.prefs.mode, reverse, drill, lesson, plan } = {}) {
     let pool = items || poolFor(topics || selectedTopicIds());
+    if (quietMode() && ['listening', 'speaking'].includes(mode)) {
+        toast(`Can't listen now is on until ${quietUntilText()}, so this is a quiz instead.`, 'info');
+        mode = 'quiz';
+    }
     if (mode === 'speaking') {
         if (!Speaking.supported) { toast('Speaking needs speech recognition: try Chrome, Edge or Safari.', 'error'); return; }
         pool = pool.filter(i => !i.isChar && !i.gen);
@@ -2271,6 +2320,7 @@ function promptBlock(q, item) {
             <div class="prompt-label">${esc(q.label)}</div>
             <button type="button" class="listen-btn" data-action="replay-audio" aria-label="Play again">${icon('volume')}</button>
             <div class="prompt-hint muted">Tap to hear it again <kbd>R</kbd></div>
+            <button type="button" class="link-btn" data-action="quiet-on">Can't listen now</button>
             ${item.gen ? '' : stars(masteryOf(item.id))}
         </div>`;
     }
@@ -2778,7 +2828,9 @@ const actions = {
         toast('Progress reset.');
     },
     'exit-study': () => exitSession(),
-    'replay-audio': () => { if (app.session && app.session.item) speakItem(app.session.item); },
+    'replay-audio': () => { if (app.session && app.session.item) speakItem(app.session.item, true); },
+    'quiet-toggle': () => setQuiet(!quietMode()),
+    'quiet-on': () => setQuiet(true),
     'start-lesson': el => startLesson(el.dataset.lesson),
     'start-test': el => startSession({ items: lessonItems(lessonById(`test:${el.dataset.unit}`)), mode: 'lesson', reverse: false, lesson: `test:${el.dataset.unit}` }),
     'skip-exercise': () => { const s = app.session; if (s && !s.locked) { Speaking.stop(); advance(); } },
