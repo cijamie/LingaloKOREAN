@@ -46,6 +46,7 @@ const STORE_KEY = 'lingalo_stats_v4';
 const THEME_KEY = 'lingalo_theme';
 const LANG = KOREAN;
 const MODES = {
+    smart: { label: 'Smart review', desc: 'Introduces new words, then moves each word from recognizing it to producing it', icon: 'learn' },
     quiz: { label: 'Quiz', desc: 'Pick the right answer from four choices', icon: 'target' },
     flashcards: { label: 'Flashcards', desc: 'Recall it, flip, then rate yourself', icon: 'cards' },
     listening: { label: 'Listening', desc: 'Hear the word, pick its meaning', icon: 'headphones' },
@@ -65,6 +66,13 @@ const MAX_FREEZES = 2;
 const LENGTHS = [10, 15, 25, 0];
 const VIEWS = ['home', 'learn', 'practice', 'progress', 'numbers', 'words', 'settings'];
 const PASS_PCT = 60;
+// Smart review introduces at most this many new words per session, after the reviews.
+const NEW_PER_SESSION = 5;
+// Exercises where you recognize the answer among options or rebuild it from tiles. That is weaker
+// evidence than producing the word yourself, so a right answer moves its review date out less.
+const RECOGNITION = new Set(['choice', 'listen', 'build', 'particle', 'reply', 'read']);
+// Session modes that run a queue of exercises ({ kind, item }) rather than plain items.
+const exerciseMode = mode => mode === 'lesson' || mode === 'smart';
 
 const defaults = () => ({
     version: 6,
@@ -93,7 +101,8 @@ const defaults = () => ({
     sfxEnabled: true,
     speechRate: 1.0,
     autoAudio: false,
-    prefs: { mode: 'quiz', reverse: false, teach: true, hints: true, length: 15, topics: {}, numStyle: 'read', numLevel: 1000, speakEx: true, writeEx: true, typeEx: true }
+    sayAnswer: true,
+    prefs: { mode: 'smart', reverse: false, teach: true, roman: 'fade', length: 15, topics: {}, numStyle: 'read', numLevel: 1000, speakEx: true, writeEx: true, typeEx: true }
 });
 
 /* ------------------------------------------------------------------ */
@@ -125,7 +134,14 @@ function loadProgress() {
     const s = { ...base, ...saved, prefs: { ...base.prefs, ...(saved.prefs || {}) }, version: 6 };
     ['mastery', 'srs', 'history', 'customList', 'guided', 'unitTests', 'achievements', 'skills', 'daily'].forEach(k => { if (!s[k] || typeof s[k] !== 'object') s[k] = {}; });
     if (!s.prefs.topics) s.prefs.topics = {};
-    if (!MODES[s.prefs.mode]) s.prefs.mode = 'quiz';
+    // Saves from before romanization fading had an on/off "hints" switch and defaulted to Quiz.
+    // Move them onto the new defaults once: fading romanization, and Smart review.
+    if (!['fade', 'always', 'never'].includes(s.prefs.roman)) {
+        s.prefs.roman = saved.prefs && saved.prefs.hints === false ? 'never' : 'fade';
+        if (s.prefs.mode === 'quiz') s.prefs.mode = 'smart';
+    }
+    delete s.prefs.hints;
+    if (!MODES[s.prefs.mode]) s.prefs.mode = 'smart';
 
     // Progress from the older single-language QuickHangul app.
     try {
@@ -227,21 +243,26 @@ function bumpMastery(item, delta) {
 /* ------------------------------------------------------------------ */
 // Each word gets a review date. Right answers push it further out
 // (1 day, 3 days, then interval × ease); a miss brings it back today.
+// 'hard' is a right answer that only shows recognition (picked from options, or with the
+// romanization peeked at): the interval grows slowly, so a lucky guess can't bury a word for weeks.
 function schedule(item, rating) {
     if (item.gen) return;
     const t = dayNum();
     const d = deck();
     const c = d[item.id] || { ivl: 0, ease: 2.5, due: t };
     if (rating === 'again') {
+        if (c.ivl > 0) c.lapses = (c.lapses || 0) + 1;
         c.ivl = 0;
         c.ease = Math.max(1.3, c.ease - 0.2);
         c.due = t;
     } else if (c.due <= t) {
         // Only words that are due move forward; practicing early doesn't stretch the interval.
         const easy = rating === 'easy';
+        const hard = rating === 'hard';
         let ivl;
         if (c.ivl === 0) ivl = easy ? 4 : 1;
-        else if (c.ivl === 1) ivl = easy ? 6 : 3;
+        else if (c.ivl === 1) ivl = easy ? 6 : hard ? 2 : 3;
+        else if (hard) ivl = Math.max(c.ivl + 1, Math.round(c.ivl * 1.2));
         else ivl = Math.round(c.ivl * c.ease * (easy ? 1.3 : 1));
         if (easy) c.ease = Math.min(3, c.ease + 0.15);
         c.ivl = Math.min(365, ivl);
@@ -252,6 +273,27 @@ function schedule(item, rating) {
 
 const isDue = (item, t = dayNum()) => { const c = deck()[item.id]; return !!c && c.due <= t; };
 const isNew = item => !deck()[item.id];
+
+// How well a word is known, which decides the kind of exercise Smart review gives it:
+// 0 new, 1 just met (recognize it), 2 getting there (recall it from English), 3 known (produce it).
+function stageOf(item) {
+    const c = deck()[item.id];
+    if (!c) return 0;
+    const m = masteryOf(item.id);
+    if (c.ivl < 3 || m < 2) return 1;
+    if (c.ivl < 10 || m < 4) return 2;
+    return 3;
+}
+
+// Romanization is a crutch: it lets you read the English letters instead of the Hangul.
+// "fade" shows it only while a word is new to you; after that it's one tap (or H) away.
+function romanHint(item) {
+    const pref = app.store.prefs.roman;
+    if (!item || !item.rom || item.isChar || pref === 'never') return '';
+    if (pref === 'always' || item.gen) return item.rom;
+    return stageOf(item) <= 1 ? item.rom : '';
+}
+const romanHidden = item => !!item && !!item.rom && !item.isChar && app.store.prefs.roman !== 'never' && !romanHint(item);
 
 /* ------------------------------------------------------------------ */
 /* Curriculum model                                                    */
@@ -1113,7 +1155,7 @@ function renderBuilder() {
 /* Practice setup                                                      */
 /* ------------------------------------------------------------------ */
 // Modes shown up front on Practice; the rest sit under "More ways to practice".
-const MAIN_MODES = ['quiz', 'flashcards', 'listening', 'speaking'];
+const MAIN_MODES = ['smart', 'flashcards', 'listening', 'speaking'];
 
 function renderPractice() {
     const p = app.store.prefs;
@@ -1124,7 +1166,7 @@ function renderPractice() {
     const count = pool.length;
     const due = pool.filter(i => isDue(i)).length;
     const sessionCount = p.mode === 'speedMatch' ? 'Up to 60 seconds' : plural(p.length ? Math.min(p.length, count) : count, 'question');
-    const noReverse = ['typing', 'matchPairs', 'listening', 'speaking', 'hangulTyping', 'writing'].includes(p.mode);
+    const noReverse = ['smart', 'typing', 'matchPairs', 'listening', 'speaking', 'hangulTyping', 'writing'].includes(p.mode);
 
     const toggle = (key, title, desc, disabled = false) => `
         <label class="switch-row ${disabled ? 'is-disabled' : ''}">
@@ -1141,7 +1183,7 @@ function renderPractice() {
     };
     const modes = Object.entries(MODES);
     const more = modes.filter(([id]) => !MAIN_MODES.includes(id));
-    const optionSummary = [p.length ? `${p.length} questions` : 'All words', p.reverse && !noReverse ? 'English → Korean' : '', p.hints ? 'hints on' : 'hints off'].filter(Boolean).join(' · ');
+    const optionSummary = [p.length ? `${p.length} questions` : 'All words', p.reverse && !noReverse ? 'English → Korean' : '', { fade: 'romanization fades', always: 'romanization on', never: 'no romanization' }[p.roman]].filter(Boolean).join(' · ');
 
     $('#view-practice').innerHTML = `
         <header class="page-head">
@@ -1197,9 +1239,14 @@ function renderPractice() {
             <div class="options-grid">
                 ${toggle('reverse', 'English → Korean', noReverse ? 'Not used in this mode' : 'Show the English, answer in Korean', noReverse)}
                 ${toggle('teach', 'Repeat mistakes', 'Missed words come back later in the session')}
-                ${toggle('hints', 'Romanization hints', 'Show pronunciation under words')}
                 <div class="switch-row">
-                    <span><strong>Session length</strong><small>${p.mode === 'speedMatch' ? 'Speed sprint is always 60 seconds' : 'Due words first, then new, then weakest'}</small></span>
+                    <span><strong>Romanization</strong><small>${{ fade: 'Shown while a word is new, then hidden so you read the Hangul (tap or H to peek)', always: 'Always shown under Korean words', never: 'Never shown: read the Hangul' }[p.roman]}</small></span>
+                    <div class="segmented" role="radiogroup" aria-label="Romanization">
+                        ${[['fade', 'Fade'], ['always', 'Always'], ['never', 'Never']].map(([v, l]) => `<button type="button" role="radio" aria-checked="${p.roman === v}" class="${p.roman === v ? 'is-on' : ''}" data-action="set-roman" data-value="${v}">${l}</button>`).join('')}
+                    </div>
+                </div>
+                <div class="switch-row">
+                    <span><strong>Session length</strong><small>${p.mode === 'speedMatch' ? 'Speed sprint is always 60 seconds' : p.mode === 'smart' ? `Due words first, then up to ${NEW_PER_SESSION} new, then weakest` : 'Due words first, then new, then weakest'}</small></span>
                     <div class="segmented" role="radiogroup" aria-label="Session length">
                         ${LENGTHS.map(n => `<button type="button" role="radio" aria-checked="${p.length === n}" class="${p.length === n ? 'is-on' : ''}" data-action="set-length" data-length="${n}" ${p.mode === 'speedMatch' ? 'disabled' : ''}>${n || 'All'}</button>`).join('')}
                     </div>
@@ -1512,6 +1559,10 @@ function renderSettings() {
                     <input type="checkbox" class="switch" data-setting="sfxEnabled" ${s.sfxEnabled !== false ? 'checked' : ''}>
                 </label>
                 <label class="setting-row">
+                    <span><strong>Say the answer</strong><small>Speak the Korean after every answer, right or wrong</small></span>
+                    <input type="checkbox" class="switch" data-setting="sayAnswer" ${s.sayAnswer !== false ? 'checked' : ''}>
+                </label>
+                <label class="setting-row">
                     <span><strong>Auto-play pronunciation</strong><small>Speak each word when it appears</small></span>
                     <input type="checkbox" class="switch" data-setting="autoAudio" ${s.autoAudio ? 'checked' : ''}>
                 </label>
@@ -1822,16 +1873,97 @@ function lessonExercises(lesson) {
     (lesson.concepts || []).filter(c => c.dialogue).forEach(c => some(replyExercises(c.dialogue), 3).forEach(e => ex.push(e)));
     if (p.speakEx && Speaking.supported && wordItems.length) some(wordItems, Math.ceil(wordItems.length / 4)).forEach(item => ex.push({ kind: 'speak', item }));
     if (p.writeEx) some(items.filter(canWrite), 2).forEach(item => ex.push({ kind: 'write', item }));
-    if (p.typeEx) some(items.filter(i => [...i.key].length <= 8), 2).forEach(item => ex.push({ kind: 'typeko', item }));
+    // Producing a word (typing it from its meaning) fixes it in memory far better than picking it out.
+    if (p.typeEx) some(items.filter(i => [...i.key].length <= 8), Math.max(2, Math.ceil(items.length / 3))).forEach(item => ex.push({ kind: 'typeko', item }));
     // Start with plain recognition so every item gets a first look before the harder exercises.
     const choice = shuffle(ex.filter(e => e.kind === 'choice'));
     const half = Math.ceil(choice.length / 2);
     return [...choice.slice(0, half), ...shuffle([...choice.slice(half), ...ex.filter(e => e.kind !== 'choice')])];
 }
 
+/* Smart review: the exercise for each word depends on how well you know it. New words are shown
+   first, then tested a few questions later; familiar words move from recognizing (pick the meaning)
+   to recalling (pick the Korean) to producing (type it in Hangul, build the sentence, say it). */
+function smartExercise(item, stage) {
+    const p = app.store.prefs;
+    const voice = !!koreanVoice();
+    const sentence = !item.isChar && !item.gen && wordsOf(item).length > 2; // ordering two words is a coin flip
+    const typeable = p.typeEx && !item.gen && [...item.key].length <= 8;
+    const roll = Math.random();
+    if (item.gen) return { kind: 'choice', item };
+    if (stage <= 1) return { kind: voice && roll < 0.3 ? 'listen' : 'choice', item };
+    if (item.isChar) {
+        if (stage === 2) return { kind: voice && roll < 0.5 ? 'listen' : 'choice', item };
+        return { kind: typeable ? 'typeko' : 'choice', item };
+    }
+    if (stage === 2) {
+        if (sentence) return { kind: 'order', item };
+        return { kind: voice && roll < 0.3 ? 'listen' : 'reverse', item };
+    }
+    if (p.speakEx && Speaking.supported && roll < 0.2) return { kind: 'speak', item };
+    if (sentence) return { kind: typeable && roll < 0.5 ? 'typeko' : 'order', item };
+    return { kind: typeable ? 'typeko' : 'reverse', item };
+}
+
+function smartQueue(pool, length) {
+    const t = dayNum();
+    const n = length || pool.length;
+    const due = shuffle(pool.filter(i => isDue(i, t)));
+    const fresh = pool.filter(isNew);
+    const weak = shuffle(pool.filter(i => !isNew(i) && !isDue(i, t))).sort((a, b) => masteryOf(a.id) - masteryOf(b.id));
+    const reviews = due.slice(0, n);
+    const news = fresh.slice(0, Math.max(0, Math.min(NEW_PER_SESSION, n - reviews.length)));
+    const extra = weak.slice(0, Math.max(0, n - reviews.length - news.length));
+    const review = shuffle([...reviews, ...extra]).map(i => smartExercise(i, stageOf(i)));
+    // Each new word: a card that shows it, a recognition question after the next new word's card
+    // (so it has to be recalled, not just copied), and for words a recall question at the end,
+    // so it is retrieved at growing gaps. Reviews are spread between them.
+    const steps = [];
+    news.forEach((item, k) => {
+        steps.push({ kind: 'intro', item });
+        if (k > 0) steps.push({ kind: 'choice', item: news[k - 1] });
+    });
+    const tail = shuffle(news.filter(i => !i.isChar && !i.gen).map(item => ({ kind: wordsOf(item).length > 2 ? 'order' : 'reverse', item })));
+    const lastCheck = news.length ? { kind: 'choice', item: news[news.length - 1] } : null;
+    const queue = [];
+    steps.forEach(st => { queue.push(st); if (review.length) queue.push(review.shift()); });
+    if (lastCheck) {
+        // Keep at least one other question between the last new word and its check.
+        if (review.length) queue.push(review.shift(), lastCheck);
+        else if (tail.length > 1) { const first = tail.findIndex(e => e.item !== lastCheck.item); queue.push(...tail.splice(first, 1), lastCheck); }
+        else queue.push(lastCheck);
+    }
+    return [...queue, ...review, ...tail];
+}
+
+// A new word inside Smart review: see it, hear it, read the example, then carry on.
+function renderIntro() {
+    const s = app.session;
+    const it = s.item;
+    const mn = mnemonicFor(it);
+    const ex = exampleFor(it);
+    const len = [...it.key].length;
+    $('#study-body').innerHTML = `<div class="study-card">
+        <div class="prompt teach-card">
+            <div class="prompt-label">New ${it.isChar ? 'letter' : 'word'}</div>
+            <div class="prompt-text lang-text ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(it.key)}</div>
+            ${it.isChar ? `<div class="teach-sound">${esc(mn ? mn[0] : it.rom)}</div>` : `<div class="teach-sound">${esc(it.rom)}</div><div class="back-def">${esc(it.def)}</div>`}
+            ${it.note ? `<div class="muted small">${esc(it.note)}</div>` : ''}
+            ${mn ? `<div class="mnemonic mnemonic-lg"><span>${richText(mn[1])}</span></div>` : ''}
+            ${ex ? `<div class="back-ex"><span class="lang-text">${esc(ex[0])}</span><span>${esc(ex[1])}</span></div>` : ''}
+            <button type="button" class="btn btn-secondary btn-sm teach-play" data-action="replay-audio">${icon('volume', 'icon-sm')}Hear it</button>
+            <span class="muted small">Say it out loud once. You'll be asked about it in a moment.</span>
+        </div>
+        <div class="fc-actions"><button type="button" class="btn btn-primary btn-lg teach-next" data-action="continue" id="continue-btn">Got it <kbd>Enter</kbd></button></div>
+    </div>`;
+    s.awaitingContinue = true;
+    speakItem(it);
+    setTimeout(() => { const b = $('#continue-btn'); if (b) b.focus(); }, 30);
+}
+
 function lessonQuestion(ex) {
     const it = ex.item;
-    const hint = app.store.prefs.hints && it.rom && !it.isChar ? it.rom : '';
+    const hint = romanHint(it);
     if (ex.kind === 'reverse') return { prompt: it.def, promptLang: false, hint: '', answer: it.key, answerLang: true, label: 'Which is this in Korean?' };
     if (ex.kind === 'listen') return { prompt: '', audio: true, hint: '', answer: it.def, answerLang: false, label: 'What did you hear?' };
     if (ex.kind === 'build') return { prompt: it.rom, label: 'Build this syllable', answer: it.key };
@@ -1841,7 +1973,7 @@ function lessonQuestion(ex) {
     if (ex.kind === 'speak') return { prompt: it.key, label: 'Say it out loud', answer: it.key, promptLang: true };
     if (ex.kind === 'write') return { prompt: it.key, label: 'Trace the letter', answer: it.key };
     if (ex.kind === 'typeko') return { prompt: it.def, label: 'Type it in Hangul', answer: it.key };
-    return { prompt: it.key, promptLang: true, hint, answer: it.def, answerLang: false, label: it.isChar ? 'How does this sound?' : 'What does this mean?' };
+    return { prompt: it.key, promptLang: true, hint, romHidden: romanHidden(it), answer: it.def, answerLang: false, label: it.isChar ? 'How does this sound?' : 'What does this mean?' };
 }
 
 function renderBuild() {
@@ -1902,7 +2034,7 @@ function renderOrder() {
         let tiles = ws.map(w => ({ w }));
         // In sentence lessons, add a trap: the same word with the wrong particle.
         const withParticle = ws.slice(0, -1).map(w => Hangul.particleOf(w)).find(Boolean);
-        if (withParticle && s.mode === 'lesson') tiles.push({ w: withParticle.stem + PARTICLE_PAIRS[withParticle.particle], decoy: true });
+        if (withParticle && exerciseMode(s.mode)) tiles.push({ w: withParticle.stem + PARTICLE_PAIRS[withParticle.particle], decoy: true });
         tiles = shuffle(tiles);
         for (let t = 0; t < 5 && tiles.every((x, n) => x.w === ws[n]); t++) tiles = shuffle(tiles);
         s.order = { tiles, picked: [], size: ws.length, decoy: tiles.some(x => x.decoy) };
@@ -1991,6 +2123,9 @@ function startSession({ topics, items, mode = app.store.prefs.mode, reverse, dri
         queue = shuffle([...shuffle(all.filter(e => e.kind !== 'choice')).slice(0, 9), ...shuffle(all.filter(e => e.kind === 'choice'))]).slice(0, 15);
     } else if (mode === 'lesson') {
         queue = lessonExercises(lessonById(lesson));
+    } else if (mode === 'smart') {
+        queue = smartQueue(pool, length);
+        if (!queue.length) { toast('Nothing to review in these topics right now.', 'info'); return; }
     } else if (mode === 'speedMatch') {
         queue = shuffle(pool);
     } else {
@@ -2066,7 +2201,7 @@ function updateStudyBar() {
 // Decide what to show and what counts as the right answer for an item.
 function buildQuestion(item) {
     const s = app.session;
-    const hint = app.store.prefs.hints && item.rom && !item.isChar ? item.rom : '';
+    const hint = romanHint(item);
 
     if (s.mode === 'listening') {
         return { prompt: '', audio: true, hint: '', answer: item.def, answerLang: false, label: 'What did you hear?' };
@@ -2078,23 +2213,51 @@ function buildQuestion(item) {
     if (s.reverse && s.mode !== 'matchPairs') {
         return { prompt: item.def, promptLang: false, hint: '', answer: item.key, answerLang: true, label: item.gen ? 'How do you say this in Korean?' : 'Which is this in Korean?' };
     }
-    return { prompt: item.key, promptLang: true, hint, answer: item.def, answerLang: false, label: item.gen ? 'What number is this?' : item.isChar ? 'How does this sound?' : 'What does this mean?' };
+    return { prompt: item.key, promptLang: true, hint, romHidden: romanHidden(item), answer: item.def, answerLang: false, label: item.gen ? 'What number is this?' : item.isChar ? 'How does this sound?' : 'What does this mean?' };
 }
 
+// Wrong options that could pass for the answer: the same kind of thing (letter, word, sentence),
+// from the same topic, of similar length, sharing syllables. Random words from other topics are
+// easy to rule out, which lets you get it right without knowing the word.
 function buildOptions(q, item) {
     const s = app.session;
     const valueOf = i => (q.answerLang ? i.key : i.def);
+    const kindOf = i => (i.isChar ? 'char' : i.gen ? 'gen' : wordsOf(i).length > 1 ? 'sentence' : 'word');
+    const target = kindOf(item);
+    const answerLen = [...q.answer].length;
+    const syllables = new Set([...item.key].filter(hasHangul));
+    const score = i => {
+        const v = valueOf(i);
+        let sc = (kindOf(i) === target ? 4 : 0) + (i.topic === item.topic ? 3 : 0) - Math.min(1.5, Math.abs([...v].length - answerLen) / 6);
+        // A number among words (or a word among numbers) gives the answer away.
+        if (/\d/.test(v) !== /\d/.test(q.answer)) sc -= 4;
+        if (q.answerLang) sc += Math.min(2, [...i.key].filter(ch => syllables.has(ch)).length);
+        return sc + Math.random() * 2.5;
+    };
     const opts = [q.answer];
     const seen = new Set([normalize(q.answer)]);
-    const sources = [item.alts ? shuffle(item.alts) : [], shuffle(s.pool), shuffle(allItems())];
-    for (const src of sources) {
-        for (const i of src) {
-            if (opts.length >= 4) break;
-            const v = valueOf(i);
-            if (v && !seen.has(normalize(v))) { seen.add(normalize(v)); opts.push(v); }
-        }
-    }
+    const add = v => { if (opts.length < 4 && v && !seen.has(normalize(v))) { seen.add(normalize(v)); opts.push(v); } };
+    if (item.alts) shuffle(item.alts).forEach(i => add(valueOf(i)));
+    uniqueItems([s.pool, allItems()])
+        .filter(i => i.id !== item.id && valueOf(i))
+        .map(i => [score(i), i])
+        .sort((a, b) => b[0] - a[0])
+        .forEach(([, i]) => add(valueOf(i)));
     return shuffle(opts);
+}
+
+// The hint line under a prompt: romanization, or a button to peek at it (which counts as a hint).
+const hintLine = q => (q.hint
+    ? `<div class="prompt-hint">${esc(q.hint)}</div>`
+    : q.romHidden ? `<div class="prompt-hint" id="rom-slot"><button type="button" class="link-btn peek-rom" data-action="peek-rom">Show pronunciation <kbd>H</kbd></button></div>`
+    : '<div class="prompt-hint">&nbsp;</div>');
+
+function peekRoman() {
+    const s = app.session;
+    const slot = $('#rom-slot');
+    if (!s || !s.item || !slot || !s.q.romHidden) return;
+    if (!s.locked) s.peeked = true;
+    slot.textContent = s.item.rom;
 }
 
 function promptBlock(q, item) {
@@ -2110,7 +2273,7 @@ function promptBlock(q, item) {
     return `<div class="prompt">
         <div class="prompt-label">${esc(q.label)}</div>
         <div class="prompt-text ${q.promptLang ? 'lang-text' : ''} ${len > 14 ? 'is-long' : len > 6 ? 'is-mid' : ''}">${esc(q.prompt)}</div>
-        <div class="prompt-hint">${esc(q.hint) || '&nbsp;'}</div>
+        ${hintLine(q)}
         ${item.gen ? '' : stars(masteryOf(item.id))}
     </div>`;
 }
@@ -2121,10 +2284,10 @@ function nextQuestion() {
     if (s.mode === 'speedMatch' && s.index >= s.queue.length) s.queue.push(...shuffle(s.pool));
     if (s.index >= s.queue.length) return finishSession();
 
-    if (s.mode === 'lesson') {
+    if (exerciseMode(s.mode)) {
         s.ex = s.queue[s.index];
         s.item = s.ex.item;
-        s.q = lessonQuestion(s.ex);
+        s.q = s.ex.kind === 'intro' ? {} : lessonQuestion(s.ex);
     } else if (MODE_KIND[s.mode]) {
         s.item = s.queue[s.index];
         s.ex = { kind: MODE_KIND[s.mode], item: s.item };
@@ -2137,15 +2300,16 @@ function nextQuestion() {
     s.locked = false;
     s.revealed = false;
     s.awaitingContinue = false;
+    s.peeked = false;
     s.build = s.order = s.speak = s.write = s.kb = null;
     Speaking.stop();
     updateStudyBar();
 
     const body = $('#study-body');
-    const render = { build: renderBuild, order: renderOrder, speak: renderSpeak, write: renderWrite, typeko: renderTypeKo }[s.ex && s.ex.kind];
+    const render = { intro: renderIntro, build: renderBuild, order: renderOrder, speak: renderSpeak, write: renderWrite, typeko: renderTypeKo }[s.ex && s.ex.kind];
     if (render) {
         render();
-    } else if (['quiz', 'speedMatch', 'listening', 'lesson'].includes(s.mode)) {
+    } else if (['quiz', 'speedMatch', 'listening', 'lesson', 'smart'].includes(s.mode)) {
         s.q.options = s.q.options || buildOptions(s.q, s.item);
         body.innerHTML = `<div class="study-card">${promptBlock(s.q, s.item)}
             <div class="options">${s.q.options.map((o, i) => `
@@ -2199,6 +2363,8 @@ function advance() {
 function grade(ok, { xpRight = 10, xpWrong = 2, gain = 1, rating = 'good' } = {}) {
     const s = app.session;
     const item = s.item;
+    // Recognizing a word, or answering after peeking at its romanization, only counts as 'hard'.
+    if (rating === 'good' && (RECOGNITION.has(exerciseKind(s)) || s.peeked)) rating = 'hard';
     s.attempts++;
     logActivity({ correct: ok ? 1 : 0, total: 1 });
     logSkill(ok);
@@ -2224,6 +2390,13 @@ function grade(ok, { xpRight = 10, xpWrong = 2, gain = 1, rating = 'good' } = {}
     updateStudyBar();
 }
 
+// The kind of exercise being answered, for practice modes that don't build exercises.
+function exerciseKind(s) {
+    if (s.ex) return s.ex.kind;
+    if (s.mode === 'quiz') return s.reverse ? 'reverse' : 'choice';
+    return { listening: 'listen', typing: 'read', speedMatch: 'choice', matchPairs: 'choice' }[s.mode] || '';
+}
+
 function skillOf(s) {
     if (s.ex) return KIND_SKILL[s.ex.kind] || 'reading';
     return { listening: 'listening', typing: 'typing', flashcards: 'recall' }[s.mode] || (s.reverse ? 'recall' : 'reading');
@@ -2241,7 +2414,13 @@ function requeue(item, gap) {
     const n = s.repeats.get(item.id) || 0;
     if (n >= 2) return;
     s.repeats.set(item.id, n + 1);
-    s.queue.splice(Math.min(s.index + gap, s.queue.length), 0, s.mode === 'lesson' ? s.ex : item);
+    s.queue.splice(Math.min(s.index + gap, s.queue.length), 0, exerciseMode(s.mode) ? s.ex : item);
+}
+
+// Hear the Korean every time the answer is shown, right or wrong, so sound and spelling stick together.
+function sayAnswer() {
+    const s = app.session;
+    if (s && s.item && app.store.sayAnswer !== false && !s.q.audio) speakItem(s.item);
 }
 
 function answerText(item) {
@@ -2288,7 +2467,10 @@ function answerQuiz(index) {
     grade(ok);
     if (s.mode === 'speedMatch') {
         setTimeout(advance, ok ? 300 : 900);
-    } else if (s.q.audio) {
+        return;
+    }
+    sayAnswer();
+    if (s.q.audio) {
         // Always reveal what was said, so the sound gets linked to the word.
         showFeedback(ok);
     } else if (s.q.feedback) {
@@ -2296,7 +2478,9 @@ function answerQuiz(index) {
     } else if (ok) {
         const btn = $$('.option')[index];
         if (btn) { const r = btn.getBoundingClientRect(); confetti(r.left + r.width / 2, r.top + r.height / 2); }
-        setTimeout(advance, 750);
+        // A little longer when the word is being spoken, so it isn't cut off by the next question.
+        const at = s.index;
+        setTimeout(() => { if (app.session === s && s.index === at) advance(); }, app.store.sayAnswer !== false && koreanVoice() ? 1300 : 750);
     } else {
         showFeedback(false);
     }
@@ -2320,6 +2504,7 @@ function checkTyped(value) {
     }
     if (input) input.classList.add(ok ? 'is-right' : 'is-wrong');
     grade(ok);
+    sayAnswer();
     showFeedback(ok);
 }
 
@@ -2504,11 +2689,12 @@ function finishSession() {
 /* ------------------------------------------------------------------ */
 /* Event wiring                                                        */
 /* ------------------------------------------------------------------ */
-const sessionMode = () => (['speedMatch', 'writing'].includes(app.store.prefs.mode) ? 'quiz' : app.store.prefs.mode);
 
 const actions = {
     'quick-start': () => startSession(),
-    'review-due': () => startSession({ items: allItems().filter(i => isDue(i)), mode: sessionMode() }),
+    'review-due': () => startSession({ items: allItems().filter(i => isDue(i)), mode: 'smart' }),
+    'set-roman': el => { app.store.prefs.roman = el.dataset.value; save(); rerenderKeepScroll(renderPractice); },
+    'peek-rom': () => peekRoman(),
     'learn-new': () => {
         const fresh = poolFor(selectedTopicIds()).filter(isNew);
         startSession({ items: fresh.slice(0, app.store.prefs.length || fresh.length), mode: 'flashcards' });
@@ -2756,13 +2942,14 @@ function bindEvents() {
         if (inField) return;
 
         if (e.key.toLowerCase() === 'r' && !e.ctrlKey && !e.metaKey) { actions['replay-audio'](); return; }
+        if (e.key.toLowerCase() === 'h' && !e.ctrlKey && !e.metaKey) { peekRoman(); return; }
 
         if (s.ex && ['build', 'order', 'write', 'speak'].includes(s.ex.kind)) {
             if (e.key === 'Enter') { e.preventDefault(); checkExercise(); }
             else if (e.key === 'Backspace' && (s.build || s.order)) { e.preventDefault(); actions[s.build ? 'build-undo' : 'order-remove']({ dataset: { pos: s.order ? s.order.picked.length - 1 : 0 } }); }
             return;
         }
-        if ((['quiz', 'speedMatch', 'listening'].includes(s.mode) || (s.mode === 'lesson' && s.q.options)) && /^[1-4]$/.test(e.key)) {
+        if ((['quiz', 'speedMatch', 'listening'].includes(s.mode) || (exerciseMode(s.mode) && s.q.options)) && /^[1-4]$/.test(e.key)) {
             answerQuiz(Number(e.key) - 1);
         } else if (s.mode === 'flashcards') {
             if (!s.revealed && (e.key === ' ' || e.key === 'Enter')) { e.preventDefault(); flipCard(); }

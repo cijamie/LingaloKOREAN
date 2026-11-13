@@ -19,7 +19,7 @@ function renderTypeKo() {
     const it = s.item;
     if (!s.kb) s.kb = { keys: [], shift: false };
     const kb = s.kb;
-    const hint = it.isChar ? 'Type the letter for this sound' : app.store.prefs.hints ? it.rom : '';
+    const hint = it.isChar ? 'Type the letter for this sound' : romanHint(it);
     $('#study-body').innerHTML = `<div class="study-card">
         <div class="prompt">
             <div class="prompt-label">Type it in Hangul</div>

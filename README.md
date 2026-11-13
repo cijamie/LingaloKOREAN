@@ -28,6 +28,7 @@ Learn **Korean**: Hangul, numbers, and everyday words, with spaced repetition so
 
 ## Study modes
 
+- **Smart review (default):** picks the exercise from how well you know each word. New words (up to 5 a session, after your reviews) get an intro card, then a question after the next new word, then a recall question at the end. Words you've just met: pick the meaning or hear it. Words you're getting: pick the Korean, or build the sentence. Words you know: type them in Hangul, build the sentence, or say them.
 - **Quiz:** four choices; keys `1`–`4`.
 - **Flashcards:** `Space` to flip, then `1` Again / `2` Good / `3` Easy.
 - **Listening:** hear the word, pick its meaning. Needs a Korean voice (built into Chrome and Edge).
@@ -50,7 +51,15 @@ Lessons mix: multiple choice, Korean from English, listening, speaking, tracing 
 
 ## Spaced repetition
 
-Each word gets a review date. A right answer pushes it out (1 day, then 3, then longer each time); a miss brings it back today. Home shows what's due.
+Each word gets a review date. A right answer pushes it out (1 day, then 3, then longer each time); a miss brings it back today. Home shows what's due, and **Today's plan** runs due words through Smart review.
+
+Not every right answer counts the same. Recognizing a word (picking it from options, hearing it, rebuilding it from tiles) or answering after peeking at the romanization only nudges the interval up (about ×1.2). Producing it (picking or typing the Korean from English, building the sentence, saying it, or rating a flashcard yourself) multiplies it by the word's ease (about ×2.5). So a lucky guess can't push a word weeks away.
+
+## Learning aids
+
+- **Romanization fades** (Practice → Options): shown while a word is new, then hidden so you read the Hangul. Tap **Show pronunciation** or press `H` to peek; peeking counts as a hint. Can be set to Always or Never.
+- **Say the answer** (Settings → Sound): the Korean is spoken after every answer, right or wrong, so sound and spelling stick together.
+- **Wrong options that could pass for the answer:** quiz distractors come from the same kind of item (letter, word, sentence) and topic, at a similar length, and sharing syllables. Numbers never appear among words.
 
 ## Data
 

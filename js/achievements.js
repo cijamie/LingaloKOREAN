@@ -89,7 +89,7 @@ function planSteps() {
     return [
         {
             id: 'review', icon: 'rotate', label: due.length ? `Review ${plural(due.length, 'due word')}` : 'Review', sub: 'Words you are about to forget',
-            done: !!done.review || !due.length, show: !!done.review || due.length > 0, run: () => startSession({ items: due, mode: sessionMode(), plan: 'review' })
+            done: !!done.review || !due.length, show: !!done.review || due.length > 0, run: () => startSession({ items: due, mode: 'smart', plan: 'review' })
         },
         {
             id: 'lesson', icon: 'learn', label: done.lesson ? "Today's lesson" : next ? `Lesson: ${next.title}` : 'Lesson', sub: next ? next.unit : '',
